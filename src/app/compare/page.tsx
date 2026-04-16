@@ -8,6 +8,39 @@ import type { ComparisonResult } from "@/types/comparison";
 import type { ContentType } from "@/types/wow";
 import { GEAR_SLOTS } from "@/types/wow";
 
+interface BlizzardStat {
+  effective: number;
+  rating?: number;
+}
+
+interface BlizzardStatsResponse {
+  health: number;
+  crit: BlizzardStat;
+  haste: BlizzardStat;
+  mastery: BlizzardStat;
+  versatility_damage_done: BlizzardStat;
+  strength: BlizzardStat;
+  agility: BlizzardStat;
+  intellect: BlizzardStat;
+  stamina: BlizzardStat;
+}
+
+interface BlizzardProfileResponse {
+  name: string;
+  level: number;
+  average_item_level: number;
+  equipped_item_level: number;
+  active_spec: { name: string };
+  character_class: { name: string };
+}
+
+interface BlizzardAPIResult {
+  success: boolean;
+  profile?: BlizzardProfileResponse;
+  stats?: BlizzardStatsResponse;
+  error?: string;
+}
+
 export default function ComparePage() {
   const [simcInput, setSimcInput] = useState("");
   const [character, setCharacter] = useState<SimCCharacterOutput | null>(null);
@@ -17,11 +50,19 @@ export default function ComparePage() {
   const [comparison, setComparison] = useState<ComparisonResult | null>(null);
   const [activeTab, setActiveTab] = useState<"summary" | "stats" | "gear">("gear");
   const [loading, setLoading] = useState(false);
+  const [apiStatus, setApiStatus] = useState<string>("");
 
-  function handleParse() {
+  const hasStats = (char: SimCCharacterOutput) =>
+    char.stats.critRating > 0 || char.stats.hasteRating > 0 || char.stats.masteryRating > 0 || char.stats.versatilityRating > 0;
+
+  const gearCount = (char: SimCCharacterOutput) =>
+    GEAR_SLOTS.filter((s) => char.gear[s]).length;
+
+  async function handleParse() {
     setLoading(true);
     setErrors([]);
     setWarnings([]);
+    setApiStatus("");
 
     try {
       const result = parseSimCString(simcInput);
@@ -32,9 +73,39 @@ export default function ComparePage() {
         return;
       }
 
-      setCharacter(result.character!);
+      const char = result.character!;
+      setCharacter(char);
       setWarnings(result.warnings);
-      generateMockComparison(result.character!, contentType);
+
+      // Try to fetch real stats from Blizzard API
+      let apiResult: BlizzardAPIResult | null = null;
+      if (char.region && char.server && char.name) {
+        setApiStatus("Obteniendo stats de Blizzard API...");
+        try {
+          const res = await fetch(`/api/blizzard/character/${char.region}/${char.server}/${char.name}`);
+          const data = await res.json();
+          if (data.success && data.stats) {
+            apiResult = data as BlizzardAPIResult;
+            // Merge real stats into character
+            char.stats.critRating = apiResult.stats!.crit?.rating || apiResult.stats!.crit?.effective || 0;
+            char.stats.hasteRating = apiResult.stats!.haste?.rating || apiResult.stats!.haste?.effective || 0;
+            char.stats.masteryRating = apiResult.stats!.mastery?.rating || apiResult.stats!.mastery?.effective || 0;
+            char.stats.versatilityRating = apiResult.stats!.versatility_damage_done?.rating || apiResult.stats!.versatility_damage_done?.effective || 0;
+            char.stats.strength = apiResult.stats!.strength?.effective || 0;
+            char.stats.agility = apiResult.stats!.agility?.effective || 0;
+            char.stats.intellect = apiResult.stats!.intellect?.effective || 0;
+            char.stats.stamina = apiResult.stats!.stamina?.effective || 0;
+            setApiStatus("");
+          } else {
+            setApiStatus("Blizzard API: " + (data.error || "No se pudieron obtener stats"));
+          }
+        } catch (e) {
+          setApiStatus("Blizzard API no disponible - usando datos simulados");
+        }
+      }
+
+      setCharacter({ ...char });
+      generateComparison(char, contentType, hasStats(char));
     } catch {
       setErrors(["Error parsing SimC string"]);
     } finally {
@@ -42,16 +113,8 @@ export default function ComparePage() {
     }
   }
 
-  const hasStats = (char: SimCCharacterOutput) =>
-    char.stats.critRating > 0 || char.stats.hasteRating > 0 || char.stats.masteryRating > 0 || char.stats.versatilityRating > 0;
-
-  const gearCount = (char: SimCCharacterOutput) =>
-    GEAR_SLOTS.filter((s) => char.gear[s]).length;
-
-  function generateMockComparison(char: SimCCharacterOutput, ct: ContentType) {
-    const statAvailable = hasStats(char);
-
-    // Realistic mock top player stats based on WoW TWW Season 3 ilvl 276-289
+  function generateComparison(char: SimCCharacterOutput, ct: ContentType, statsAvailable: boolean) {
+    // Realistic mock top player stats based on WoW TWW Season 3
     const mockTopStats = {
       critRating: { avg: 9200, p25: 7800, p50: 9000, p75: 10400, p100: 12500 },
       hasteRating: { avg: 7600, p25: 6200, p50: 7500, p75: 8800, p100: 10200 },
@@ -67,7 +130,7 @@ export default function ComparePage() {
     };
 
     const statResults = Object.entries(mockTopStats).map(([key, data]) => {
-      const userValue = statAvailable ? (char.stats[key as keyof typeof char.stats] || 0) : 0;
+      const userValue = char.stats[key as keyof typeof char.stats] || 0;
       const diff = userValue - data.avg;
       const diffPercent = data.avg > 0 ? (diff / data.avg) * 100 : 0;
       let percentile = 50;
@@ -107,21 +170,33 @@ export default function ComparePage() {
       };
     });
 
-    const avgStatScore = statAvailable
+    const avgStatScore = statsAvailable
       ? statResults.reduce((s, r) => s + r.percentile, 0) / Math.max(statResults.length, 1)
       : 0;
     const avgGearScore = gearResults.reduce((s, r) => s + r.score, 0) / Math.max(gearResults.length, 1);
 
     const recommendations: ComparisonResult["recommendations"] = [];
 
-    if (!statAvailable) {
+    if (!statsAvailable) {
       recommendations.push({
         type: "stat",
         severity: "medium",
-        message: "El addon SimC ya no incluye stats. Conecta la Blizzard API para obtener tus stats reales.",
+        message: "No se pudieron obtener tus stats de Blizzard API. Verifica las credenciales API en la configuracion.",
         currentValue: "--",
         recommendedValue: "--",
       });
+    } else {
+      statResults
+        .filter((s) => s.diffPercent < -10)
+        .forEach((s) => {
+          recommendations.push({
+            type: "stat",
+            severity: s.diffPercent < -20 ? "high" : "medium",
+            message: `Tu ${s.stat} esta ${Math.abs(s.diffPercent).toFixed(1)}% por debajo del promedio de top players`,
+            currentValue: s.userValue.toString(),
+            recommendedValue: s.topAvg.toString(),
+          });
+        });
     }
 
     gearResults
@@ -130,7 +205,7 @@ export default function ComparePage() {
         recommendations.push({
           type: "gear",
           severity: "high",
-          message: `Slot ${g.slot.replace("_", " ")} vacio`,
+          message: `Slot ${g.slot.replace(/_/g, " ")} vacio`,
           currentValue: "--",
           recommendedValue: "Equipar item",
         });
@@ -192,6 +267,11 @@ export default function ComparePage() {
             </div>
           )}
         </div>
+        {apiStatus && (
+          <div className={`mt-3 text-sm ${apiStatus.startsWith("Blizzard API:") ? "text-warning" : "text-muted"}`}>
+            {apiStatus}
+          </div>
+        )}
       </div>
 
       {/* Results */}
@@ -222,13 +302,13 @@ export default function ComparePage() {
           {/* Content Type Toggle */}
           <div className="flex gap-2 mb-4">
             <button
-              onClick={() => { setContentType("mythic_plus"); generateMockComparison(character, "mythic_plus"); }}
+              onClick={() => { setContentType("mythic_plus"); generateComparison(character, "mythic_plus", hasStats(character)); }}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${contentType === "mythic_plus" ? "bg-primary text-white" : "bg-card border border-border text-muted hover:text-foreground"}`}
             >
               Mythic+
             </button>
             <button
-              onClick={() => { setContentType("raid"); generateMockComparison(character, "raid"); }}
+              onClick={() => { setContentType("raid"); generateComparison(character, "raid", hasStats(character)); }}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${contentType === "raid" ? "bg-primary text-white" : "bg-card border border-border text-muted hover:text-foreground"}`}
             >
               Raid
@@ -299,8 +379,7 @@ export default function ComparePage() {
               {!hasStats(character) && (
                 <div className="bg-warning/10 border border-warning/30 rounded-lg p-4 mb-4">
                   <p className="text-sm text-warning">
-                    El addon SimC ya no incluye stats en el string. Para comparar tus stats reales, necesitas conectar la Blizzard API.
-                    Mientras tanto, se muestran los promedios de top players como referencia.
+                    No se pudieron obtener tus stats de Blizzard API. Verifica que las credenciales BLIZZARD_CLIENT_ID y BLIZZARD_CLIENT_SECRET esten configuradas correctamente.
                   </p>
                 </div>
               )}
@@ -310,18 +389,17 @@ export default function ComparePage() {
                     <div className="font-medium">{stat.stat}</div>
                     <div className="flex items-center gap-3">
                       <span className="text-sm text-muted">Top avg: {stat.topAvg.toLocaleString()}</span>
-                      {stat.userValue > 0 && (
+                      {stat.userValue > 0 ? (
                         <span className={`text-sm font-semibold ${stat.diff >= 0 ? "text-success" : "text-danger"}`}>
                           {stat.diff >= 0 ? "+" : ""}{stat.diff.toLocaleString()} ({stat.diffPercent >= 0 ? "+" : ""}{stat.diffPercent}%)
                         </span>
+                      ) : (
+                        <span className="text-sm text-muted">--</span>
                       )}
                     </div>
                   </div>
                   <div className="relative h-8 bg-border/30 rounded-lg overflow-hidden">
-                    <div
-                      className="absolute inset-y-0 left-0 bg-muted/10 rounded-lg"
-                      style={{ width: "100%" }}
-                    />
+                    <div className="absolute inset-y-0 left-0 bg-muted/10 rounded-lg" style={{ width: "100%" }} />
                     {stat.userValue > 0 && (
                       <div
                         className="absolute inset-y-0 left-0 stat-bar-fill rounded-lg flex items-center justify-end pr-2"
@@ -332,6 +410,9 @@ export default function ComparePage() {
                       >
                         <span className="text-xs font-bold text-background">{stat.userValue.toLocaleString()}</span>
                       </div>
+                    )}
+                    {stat.userValue > 0 && (
+                      <div className="absolute inset-y-0 left-0 border-l-2 border-r-2 border-accent/50" style={{ width: `${(stat.topAvg / stat.topP100) * 100}%` }} title="Top avg" />
                     )}
                   </div>
                   <div className="flex justify-between text-xs text-muted mt-1">
@@ -370,9 +451,7 @@ export default function ComparePage() {
                         <td className="px-4 py-3 text-sm font-medium capitalize">{g.slot.replace(/_/g, " ")}</td>
                         <td className="px-4 py-3 text-sm">
                           {item ? (
-                            <span>
-                              <span className="quality-epic">{itemName || `Item #${itemId}`}</span>
-                            </span>
+                            <span className="quality-epic">{itemName || `Item #${itemId}`}</span>
                           ) : (
                             <span className="text-muted">--</span>
                           )}
