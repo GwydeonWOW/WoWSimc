@@ -1,7 +1,6 @@
 services:
   app:
-    image: wowsimc:latest
-    build: https://github.com/GwydeonWOW/WoWSimc.git
+    image: ghcr.io/gwydeonwow/wowsimc:latest
     ports:
       - "3000:3000"
     environment:
@@ -16,11 +15,6 @@ services:
       redis:
         condition: service_healthy
     restart: unless-stopped
-    labels:
-      - "coolify.managed=true"
-      - "coolify.proxy.http=true"
-      - "coolify.proxy.http.port=3000"
-      - "coolify.proxy.https=true"
     networks:
       - wowsimc
 
