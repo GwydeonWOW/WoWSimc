@@ -1,5 +1,6 @@
 services:
   app:
+    image: wowsimc:latest
     build: https://github.com/GwydeonWOW/WoWSimc.git
     ports:
       - "3000:3000"
