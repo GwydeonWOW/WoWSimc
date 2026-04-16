@@ -1,0 +1,68 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model TopPlayerAggregate {
+  id                String   @id @default(cuid())
+  classSlug         String
+  specSlug          String
+  contentType       String   // "mythic_plus" | "raid"
+  season            String
+
+  topTalentBuild    String
+  talentPickRates   Json     // { talentId: { pickRate, avgRank } }
+  avgStats          Json     // { statName: { avg, p25, p50, p75, p100 } }
+  statPriority      Json     // ["haste", "mastery", "vers", "crit"]
+  gearPopularity    Json     // { slot: [{ itemId, name, popularity, avgIlvl }] }
+  enchantPopularity Json     // { slot: [{ enchantId, popularity }] }
+  gemPopularity     Json     // [{ gemId, popularity }]
+
+  playerCount       Int      @default(0)
+  updatedAt         DateTime @updatedAt
+  createdAt         DateTime @default(now())
+
+  @@unique([classSlug, specSlug, contentType, season])
+}
+
+model CachedCharacter {
+  id              String   @id @default(cuid())
+  region          String
+  realm           String
+  name            String
+
+  classSlug       String
+  specSlug        String
+  level           Int      @default(80)
+  race            String
+
+  equipment       Json     // Full equipment data
+  talents         Json     // Talent data
+  stats           Json     // Stats snapshot
+
+  mythicPlusScore Float?
+  raidProgression Json?
+
+  source          String   @default("blizzard_api") // "blizzard_api" | "simc_addon"
+  lastFetched     DateTime @updatedAt
+  createdAt       DateTime @default(now())
+
+  @@unique([region, realm, name])
+}
+
+model SyncJob {
+  id              String    @id @default(cuid())
+  type            String    // "top_players" | "item_database"
+  status          String    // "running" | "completed" | "failed"
+  classSlug       String?
+  specSlug        String?
+  contentType     String?
+  playerCount     Int?
+  error           String?
+  startedAt       DateTime  @default(now())
+  completedAt     DateTime?
+}

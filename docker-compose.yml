@@ -1,0 +1,59 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=postgresql://wowsimc:wowsimc@postgres:5432/wowsimc
+      - REDIS_URL=redis://redis:6379
+      - BLIZZARD_CLIENT_ID=${BLIZZARD_CLIENT_ID}
+      - BLIZZARD_CLIENT_SECRET=${BLIZZARD_CLIENT_SECRET}
+      - RAIDERIO_API_KEY=${RAIDERIO_API_KEY:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - wowsimc
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: wowsimc
+      POSTGRES_PASSWORD: wowsimc
+      POSTGRES_DB: wowsimc
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wowsimc"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - wowsimc
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - wowsimc
+
+volumes:
+  pgdata:
+  redisdata:
+
+networks:
+  wowsimc:
+    driver: bridge
