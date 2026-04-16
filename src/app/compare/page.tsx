@@ -84,9 +84,10 @@ export default function ComparePage() {
         try {
           const res = await fetch(`/api/blizzard/character/${char.region}/${char.server}/${char.name}`);
           const data = await res.json();
-          if (data.success && data.stats) {
+          if (!data.success) {
+            setApiStatus("Blizzard API error: " + (data.error || "Unknown"));
+          } else if (data.stats) {
             apiResult = data as BlizzardAPIResult;
-            // Merge real stats into character
             char.stats.critRating = apiResult.stats!.crit?.rating || apiResult.stats!.crit?.effective || 0;
             char.stats.hasteRating = apiResult.stats!.haste?.rating || apiResult.stats!.haste?.effective || 0;
             char.stats.masteryRating = apiResult.stats!.mastery?.rating || apiResult.stats!.mastery?.effective || 0;
@@ -95,12 +96,13 @@ export default function ComparePage() {
             char.stats.agility = apiResult.stats!.agility?.effective || 0;
             char.stats.intellect = apiResult.stats!.intellect?.effective || 0;
             char.stats.stamina = apiResult.stats!.stamina?.effective || 0;
-            setApiStatus("");
+            const warnings = data.errors?.length ? ` (${data.errors.join("; ")})` : "";
+            setApiStatus(warnings || "");
           } else {
-            setApiStatus("Blizzard API: " + (data.error || "No se pudieron obtener stats"));
+            setApiStatus("Blizzard API: stats no disponibles" + (data.errors?.length ? " - " + data.errors.join("; ") : ""));
           }
         } catch (e) {
-          setApiStatus("Blizzard API no disponible - usando datos simulados");
+          setApiStatus("Blizzard API no disponible: " + (e instanceof Error ? e.message : String(e)));
         }
       }
 
