@@ -15,14 +15,16 @@ interface BlizzardStat {
 
 interface BlizzardStatsResponse {
   health: number;
-  crit: BlizzardStat;
-  haste: BlizzardStat;
-  mastery: BlizzardStat;
-  versatility_damage_done: BlizzardStat;
-  strength: BlizzardStat;
-  agility: BlizzardStat;
-  intellect: BlizzardStat;
-  stamina: BlizzardStat;
+  spell_crit?: { rating_bonus: number; value: number; rating_normalized: number };
+  spell_haste?: { rating_bonus: number; value: number; rating_normalized: number };
+  melee_crit?: { rating_bonus: number; value: number; rating_normalized: number };
+  melee_haste?: { rating_bonus: number; value: number; rating_normalized: number };
+  mastery?: { rating_bonus: number; value: number; rating_normalized: number };
+  versatility?: number;
+  strength?: { base: number; effective: number };
+  agility?: { base: number; effective: number };
+  intellect?: { base: number; effective: number };
+  stamina?: { base: number; effective: number };
 }
 
 interface BlizzardProfileResponse {
@@ -88,14 +90,18 @@ export default function ComparePage() {
             setApiStatus("Blizzard API error: " + (data.error || "Unknown"));
           } else if (data.stats) {
             apiResult = data as BlizzardAPIResult;
-            char.stats.critRating = apiResult.stats!.crit?.rating || apiResult.stats!.crit?.effective || 0;
-            char.stats.hasteRating = apiResult.stats!.haste?.rating || apiResult.stats!.haste?.effective || 0;
-            char.stats.masteryRating = apiResult.stats!.mastery?.rating || apiResult.stats!.mastery?.effective || 0;
-            char.stats.versatilityRating = apiResult.stats!.versatility_damage_done?.rating || apiResult.stats!.versatility_damage_done?.effective || 0;
-            char.stats.strength = apiResult.stats!.strength?.effective || 0;
-            char.stats.agility = apiResult.stats!.agility?.effective || 0;
-            char.stats.intellect = apiResult.stats!.intellect?.effective || 0;
-            char.stats.stamina = apiResult.stats!.stamina?.effective || 0;
+            const s = apiResult.stats!;
+            // Blizzard API uses spell_crit/melee_crit, spell_haste/melee_haste, mastery, versatility
+            const critData = s.spell_crit || s.melee_crit;
+            const hasteData = s.spell_haste || s.melee_haste;
+            char.stats.critRating = critData?.rating_normalized || 0;
+            char.stats.hasteRating = hasteData?.rating_normalized || 0;
+            char.stats.masteryRating = s.mastery?.rating_normalized || 0;
+            char.stats.versatilityRating = typeof s.versatility === 'number' ? s.versatility : 0;
+            char.stats.strength = s.strength?.effective || 0;
+            char.stats.agility = s.agility?.effective || 0;
+            char.stats.intellect = s.intellect?.effective || 0;
+            char.stats.stamina = s.stamina?.effective || 0;
             const warnings = data.errors?.length ? ` (${data.errors.join("; ")})` : "";
             setApiStatus(warnings || "");
           } else {
