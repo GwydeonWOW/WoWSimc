@@ -5,11 +5,13 @@ import { GEAR_SLOTS, WOW_CLASSES, WoW_REGIONS } from "@/types/wow";
 const GearItemSchema = z.object({
   itemId: z.number(),
   ilvl: z.number(),
+  name: z.string().optional(),
   enchantId: z.number().optional(),
   gemIds: z.array(z.number()).optional(),
   bonusIds: z.array(z.number()).optional(),
   dropLevel: z.number().optional(),
   craftedStats: z.array(z.number()).optional(),
+  craftingQuality: z.number().optional(),
   setBonus: z.string().optional(),
 });
 

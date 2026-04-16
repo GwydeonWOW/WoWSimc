@@ -2,62 +2,31 @@ import type { GearSlot, WowClass, WoWRegion } from "@/types/wow";
 import { GEAR_SLOTS, WOW_CLASSES, WoW_REGIONS } from "@/types/wow";
 import type { ParseResult, ParseWarning, SimCCharacterOutput } from "./parser.types";
 
-// Map of stat keys from SimC format to our internal format
-const STAT_KEY_MAP: Record<string, string> = {
-  strength: "strength",
-  agility: "agility",
-  intellect: "intellect",
-  stamina: "stamina",
-  crit_rating: "critRating",
-  haste_rating: "hasteRating",
-  mastery_rating: "masteryRating",
-  versatility_rating: "versatilityRating",
-  avoidance_rating: "avoidanceRating",
-  speed_rating: "speedRating",
-  leech_rating: "leechRating",
-  // Alternative formats
-  spell_power: "spellPower",
-  attack_power: "attackPower",
-};
-
 // Set of valid gear slot names
 const GEAR_SLOT_SET = new Set<string>(GEAR_SLOTS);
 
-// Set of known metadata keys
-const METADATA_KEYS = new Set([
-  "level",
-  "race",
-  "region",
-  "server",
-  "spec",
-  "role",
-  "professions",
-  "talents",
-  "class_talents",
-  "spec_talents",
-  "hero_talents",
-  "pvp_talents",
-  "covenant",
-  "soulbind",
-  "conduit",
-  "heartbeat",
-]);
-
 /**
  * Parse a gear item line from SimC format
- * Format: slot=,id=XXX,ilevel=XXX[,enchant_id=XX][,gem_id=XX:YY][,bonus_id=XX/YY][,drop_level=XX][,crafted_stats=XX/YY][,set_bonus=XX]
+ * Modern format: slot=,id=XXX[,enchant_id=XX][,gem_id=XX:YY][,bonus_id=XX/YY][,crafted_stats=XX/YY]
+ * Note: ilevel is no longer included in modern SimC addon output
  */
 function parseGearItem(
   slotName: string,
-  rawValue: string
-): { item: { itemId: number; ilvl: number; [key: string]: unknown } | null; warning?: ParseWarning } {
-  // Split by comma, first element is empty (before the first comma)
+  rawValue: string,
+  itemHint?: { name: string; ilvl: number }
+): { item: { itemId: number; ilvl: number; name?: string; [key: string]: unknown } | null; warning?: ParseWarning } {
   const parts = rawValue.split(",");
 
   const item: Record<string, unknown> = {};
 
+  // Apply hint from comment line if available
+  if (itemHint) {
+    item.name = itemHint.name;
+    item.ilvl = itemHint.ilvl;
+  }
+
   for (const part of parts) {
-    if (part.length === 0) continue; // Skip empty parts
+    if (part.length === 0) continue;
 
     const eqIndex = part.indexOf("=");
     if (eqIndex === -1) continue;
@@ -87,24 +56,42 @@ function parseGearItem(
       case "crafted_stats":
         item.craftedStats = value.split("/").map((s) => parseInt(s, 10)).filter((n) => !isNaN(n));
         break;
+      case "crafting_quality":
+        item.craftingQuality = parseInt(value, 10);
+        break;
       case "set_bonus":
         item.setBonus = value;
         break;
     }
   }
 
-  if (!item.itemId || !item.ilvl) {
+  if (!item.itemId) {
     return {
       item: null,
       warning: {
         line: `${slotName}=${rawValue}`,
         lineNumber: 0,
-        message: `Invalid gear item: missing id or ilevel for slot ${slotName}`,
+        message: `Invalid gear item: missing id for slot ${slotName}`,
       },
     };
   }
 
+  // Default ilvl to 0 if not found anywhere
+  if (!item.ilvl) {
+    item.ilvl = 0;
+  }
+
   return { item: item as { itemId: number; ilvl: number; [key: string]: unknown } };
+}
+
+/**
+ * Parse a comment line to extract item name and ilvl
+ * Format: "# Item Name (285)" or "# Item Name (276)"
+ */
+function parseItemComment(line: string): { name: string; ilvl: number } | null {
+  const match = line.match(/^#\s+(.+?)\s+\((\d+)\)\s*$/);
+  if (!match) return null;
+  return { name: match[1], ilvl: parseInt(match[2], 10) };
 }
 
 /**
@@ -149,7 +136,7 @@ export function parseSimCString(input: string): ParseResult {
   const warnings: ParseWarning[] = [];
   const errors: string[] = [];
 
-  const lines = input.split("\n").map((l) => l.trim());
+  const lines = input.split("\n").map((l) => l.trimEnd());
 
   // Temporary storage
   let className: string | null = null;
@@ -166,14 +153,25 @@ export function parseSimCString(input: string): ParseResult {
 
   let classLineFound = false;
   let lineNumber = 0;
+  let lastCommentHint: { name: string; ilvl: number } | null = null;
 
   for (const rawLine of lines) {
     lineNumber++;
 
-    // Skip empty lines and comments
-    if (rawLine.length === 0 || rawLine.startsWith("#") || rawLine.startsWith("---")) {
+    // Skip empty lines
+    if (rawLine.length === 0) continue;
+
+    // Check for comment lines - might contain item hints
+    if (rawLine.startsWith("#")) {
+      const hint = parseItemComment(rawLine);
+      if (hint) {
+        lastCommentHint = hint;
+      }
       continue;
     }
+
+    // Skip --- separator lines
+    if (rawLine.startsWith("---")) continue;
 
     // Check for class declaration: className="CharacterName"
     const classDecl = parseClassDeclaration(rawLine);
@@ -189,6 +187,7 @@ export function parseSimCString(input: string): ParseResult {
       className = classDecl.className;
       characterName = classDecl.characterName;
       classLineFound = true;
+      lastCommentHint = null;
       continue;
     }
 
@@ -208,18 +207,22 @@ export function parseSimCString(input: string): ParseResult {
 
     // Check if it's a gear slot
     if (GEAR_SLOT_SET.has(key)) {
-      const result = parseGearItem(key, value);
+      const result = parseGearItem(key, value, lastCommentHint || undefined);
       if (result.item) {
         gear[key] = result.item;
       }
       if (result.warning) {
         warnings.push({ ...result.warning, lineNumber });
       }
+      lastCommentHint = null;
       continue;
     }
 
-    // Check if it's a stat
-    const statKey = STAT_KEY_MAP[key];
+    // Reset comment hint if this isn't a gear line
+    lastCommentHint = null;
+
+    // Check if it's a stat with various possible key formats
+    const statKey = normalizeStatKey(key);
     if (statKey) {
       const num = parseInt(value, 10);
       if (!isNaN(num)) {
@@ -265,21 +268,18 @@ export function parseSimCString(input: string): ParseResult {
       case "soulbind":
       case "conduit":
       case "heartbeat":
+      case "checksum":
         // Known but unused for now
         break;
       default:
-        // Try to parse as stat with _rating suffix
+        // Try to parse as unknown stat with _rating suffix
         if (key.endsWith("_rating")) {
           const num = parseInt(value, 10);
           if (!isNaN(num)) {
             stats[key] = num;
           }
         } else {
-          warnings.push({
-            line: rawLine,
-            lineNumber,
-            message: `Unknown key: ${key}`,
-          });
+          // Silently ignore unknown keys (modern SimC has many extra fields)
         }
         break;
     }
@@ -316,19 +316,47 @@ export function parseSimCString(input: string): ParseResult {
     talents: parseTalentString(talentRaw),
     gear: gear as Record<string, { itemId: number; ilvl: number; [key: string]: unknown }>,
     stats: {
-      strength: (stats.strength as number) || 0,
-      agility: (stats.agility as number) || 0,
-      intellect: (stats.intellect as number) || 0,
-      stamina: (stats.stamina as number) || 0,
-      critRating: (stats.critRating as number) || 0,
-      hasteRating: (stats.hasteRating as number) || 0,
-      masteryRating: (stats.masteryRating as number) || 0,
-      versatilityRating: (stats.versatilityRating as number) || 0,
-      avoidanceRating: (stats.avoidanceRating as number) || 0,
-      speedRating: (stats.speedRating as number) || 0,
-      leechRating: (stats.leechRating as number) || 0,
+      strength: stats.strength || 0,
+      agility: stats.agility || 0,
+      intellect: stats.intellect || 0,
+      stamina: stats.stamina || 0,
+      critRating: stats.critRating || 0,
+      hasteRating: stats.hasteRating || 0,
+      masteryRating: stats.masteryRating || 0,
+      versatilityRating: stats.versatilityRating || 0,
+      avoidanceRating: stats.avoidanceRating || 0,
+      speedRating: stats.speedRating || 0,
+      leechRating: stats.leechRating || 0,
     },
   };
 
   return { success: true, character, warnings, errors };
+}
+
+/**
+ * Normalize various stat key formats to our internal format
+ */
+function normalizeStatKey(key: string): string | null {
+  const map: Record<string, string> = {
+    strength: "strength",
+    agility: "agility",
+    intellect: "intellect",
+    stamina: "stamina",
+    crit_rating: "critRating",
+    haste_rating: "hasteRating",
+    mastery_rating: "masteryRating",
+    versatility_rating: "versatilityRating",
+    avoidance_rating: "avoidanceRating",
+    speed_rating: "speedRating",
+    leech_rating: "leechRating",
+    spell_power: "spellPower",
+    attack_power: "attackPower",
+    // Alternative shorter names
+    crit: "critRating",
+    haste: "hasteRating",
+    mastery: "masteryRating",
+    versatility: "versatilityRating",
+  };
+
+  return map[key] || null;
 }
