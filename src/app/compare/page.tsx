@@ -6,41 +6,19 @@ import type { SimCCharacterOutput } from "@/lib/simc/parser.types";
 import type { ParseWarning } from "@/lib/simc/parser.types";
 import type { ComparisonResult } from "@/types/comparison";
 import type { ContentType } from "@/types/wow";
-import { GEAR_SLOTS } from "@/types/wow";
-
-interface BlizzardStat {
-  effective: number;
-  rating?: number;
-}
+import { CURRENT_SEASON, GEAR_SLOTS } from "@/types/wow";
 
 interface BlizzardStatsResponse {
-  health: number;
-  spell_crit?: { rating_bonus: number; value: number; rating_normalized: number };
-  spell_haste?: { rating_bonus: number; value: number; rating_normalized: number };
-  melee_crit?: { rating_bonus: number; value: number; rating_normalized: number };
-  melee_haste?: { rating_bonus: number; value: number; rating_normalized: number };
-  mastery?: { rating_bonus: number; value: number; rating_normalized: number };
+  spell_crit?: { rating_normalized: number };
+  melee_crit?: { rating_normalized: number };
+  spell_haste?: { rating_normalized: number };
+  melee_haste?: { rating_normalized: number };
+  mastery?: { rating_normalized: number };
   versatility?: number;
-  strength?: { base: number; effective: number };
-  agility?: { base: number; effective: number };
-  intellect?: { base: number; effective: number };
-  stamina?: { base: number; effective: number };
-}
-
-interface BlizzardProfileResponse {
-  name: string;
-  level: number;
-  average_item_level: number;
-  equipped_item_level: number;
-  active_spec: { name: string };
-  character_class: { name: string };
-}
-
-interface BlizzardAPIResult {
-  success: boolean;
-  profile?: BlizzardProfileResponse;
-  stats?: BlizzardStatsResponse;
-  error?: string;
+  strength?: { effective: number };
+  agility?: { effective: number };
+  intellect?: { effective: number };
+  stamina?: { effective: number };
 }
 
 export default function ComparePage() {
@@ -79,33 +57,26 @@ export default function ComparePage() {
       setCharacter(char);
       setWarnings(result.warnings);
 
-      // Try to fetch real stats from Blizzard API
-      let apiResult: BlizzardAPIResult | null = null;
+      // Step 1: Fetch real stats from Blizzard API
       if (char.region && char.server && char.name) {
         setApiStatus("Obteniendo stats de Blizzard API...");
         try {
           const res = await fetch(`/api/blizzard/character/${char.region}/${char.server}/${char.name}`);
           const data = await res.json();
-          if (!data.success) {
-            setApiStatus("Blizzard API error: " + (data.error || "Unknown"));
-          } else if (data.stats) {
-            apiResult = data as BlizzardAPIResult;
-            const s = apiResult.stats!;
-            // Blizzard API uses spell_crit/melee_crit, spell_haste/melee_haste, mastery, versatility
+          if (data.success && data.stats) {
+            const s = data.stats;
             const critData = s.spell_crit || s.melee_crit;
             const hasteData = s.spell_haste || s.melee_haste;
             char.stats.critRating = critData?.rating_normalized || 0;
             char.stats.hasteRating = hasteData?.rating_normalized || 0;
             char.stats.masteryRating = s.mastery?.rating_normalized || 0;
-            char.stats.versatilityRating = typeof s.versatility === 'number' ? s.versatility : 0;
+            char.stats.versatilityRating = typeof s.versatility === "number" ? s.versatility : 0;
             char.stats.strength = s.strength?.effective || 0;
             char.stats.agility = s.agility?.effective || 0;
             char.stats.intellect = s.intellect?.effective || 0;
             char.stats.stamina = s.stamina?.effective || 0;
-            const warnings = data.errors?.length ? ` (${data.errors.join("; ")})` : "";
-            setApiStatus(warnings || "");
-          } else {
-            setApiStatus("Blizzard API: stats no disponibles" + (data.errors?.length ? " - " + data.errors.join("; ") : ""));
+          } else if (!data.success) {
+            setApiStatus("Blizzard API: " + (data.error || "Error desconocido"));
           }
         } catch (e) {
           setApiStatus("Blizzard API no disponible: " + (e instanceof Error ? e.message : String(e)));
@@ -113,7 +84,9 @@ export default function ComparePage() {
       }
 
       setCharacter({ ...char });
-      generateComparison(char, contentType, hasStats(char));
+
+      // Step 2: Fetch aggregate data and run comparison
+      await fetchAndCompare(char, contentType);
     } catch {
       setErrors(["Error parsing SimC string"]);
     } finally {
@@ -121,8 +94,82 @@ export default function ComparePage() {
     }
   }
 
-  function generateComparison(char: SimCCharacterOutput, ct: ContentType, statsAvailable: boolean) {
-    // Realistic mock top player stats based on WoW TWW Season 3
+  async function fetchAndCompare(char: SimCCharacterOutput, ct: ContentType) {
+    setApiStatus((prev) => prev || "Cargando datos de top players...");
+    setComparison(null);
+
+    try {
+      const res = await fetch(
+        `/api/compare/aggregate?classSlug=${char.class}&specSlug=${char.spec}&contentType=${ct}&season=${CURRENT_SEASON}`
+      );
+      const data = await res.json();
+
+      if (data.success && data.aggregate) {
+        // Use the server-side comparison engine via API
+        const compRes = await fetch("/api/compare", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ character: char, aggregate: data.aggregate, contentType: ct }),
+        });
+        const compData = await compRes.json();
+
+        if (compData.success) {
+          setComparison(compData.result);
+          setApiStatus("");
+          return;
+        }
+      }
+
+      // No aggregate data — try on-demand sync for this spec
+      setApiStatus("No hay datos de top players. Sincronizando...");
+      try {
+        const syncRes = await fetch("/api/sync", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            classSlug: char.class,
+            specSlug: char.spec,
+            contentType: ct,
+          }),
+        });
+        const syncData = await syncRes.json();
+
+        if (syncData.success && syncData.synced > 0) {
+          // Re-fetch aggregate after sync
+          const aggRes2 = await fetch(
+            `/api/compare/aggregate?classSlug=${char.class}&specSlug=${char.spec}&contentType=${ct}&season=${CURRENT_SEASON}`
+          );
+          const aggData2 = await aggRes2.json();
+
+          if (aggData2.success && aggData2.aggregate) {
+            const compRes2 = await fetch("/api/compare", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ character: char, aggregate: aggData2.aggregate, contentType: ct }),
+            });
+            const compData2 = await compRes2.json();
+
+            if (compData2.success) {
+              setComparison(compData2.result);
+              setApiStatus(`Comparado contra ${syncData.synced} top players`);
+              return;
+            }
+          }
+        }
+      } catch {
+        // Sync failed, fall through
+      }
+
+      // Final fallback: generate local comparison with mock top data
+      setApiStatus("Datos de top players no disponibles. Mostrando comparacion estimada.");
+      setComparison(generateFallbackComparison(char, ct));
+    } catch {
+      setApiStatus("Error al cargar datos de comparacion");
+      setComparison(generateFallbackComparison(char, ct));
+    }
+  }
+
+  function generateFallbackComparison(char: SimCCharacterOutput, ct: ContentType): ComparisonResult {
     const mockTopStats = {
       critRating: { avg: 9200, p25: 7800, p50: 9000, p75: 10400, p100: 12500 },
       hasteRating: { avg: 7600, p25: 6200, p50: 7500, p75: 8800, p100: 10200 },
@@ -131,10 +178,8 @@ export default function ComparePage() {
     };
 
     const STAT_LABELS: Record<string, string> = {
-      critRating: "Critical Strike",
-      hasteRating: "Haste",
-      masteryRating: "Mastery",
-      versatilityRating: "Versatility",
+      critRating: "Critical Strike", hasteRating: "Haste",
+      masteryRating: "Mastery", versatilityRating: "Versatility",
     };
 
     const statResults = Object.entries(mockTopStats).map(([key, data]) => {
@@ -149,16 +194,10 @@ export default function ComparePage() {
       else percentile = (userValue / Math.max(data.p25, 1)) * 25;
 
       return {
-        stat: STAT_LABELS[key] || key,
-        userValue,
-        topAvg: Math.round(data.avg),
-        topP25: Math.round(data.p25),
-        topP50: Math.round(data.p50),
-        topP75: Math.round(data.p75),
-        topP100: Math.round(data.p100),
+        stat: STAT_LABELS[key] || key, userValue,
+        topAvg: Math.round(data.avg), topP25: data.p25, topP50: data.p50, topP75: data.p75, topP100: data.p100,
         percentile: Math.max(0, Math.min(100, Math.round(percentile))),
-        diff: Math.round(diff),
-        diffPercent: Math.round(diffPercent * 10) / 10,
+        diff: Math.round(diff), diffPercent: Math.round(diffPercent * 10) / 10,
       };
     });
 
@@ -167,74 +206,31 @@ export default function ComparePage() {
       const score = userItem ? 50 + Math.floor(Math.random() * 50) : 0;
       const itemName = (userItem as Record<string, unknown>)?.name as string | undefined;
       return {
-        slot,
-        userItem: userItem ? { ...userItem, name: itemName } : null,
-        topItems: userItem
-          ? [{ itemId: userItem.itemId + 100, name: `Top ${slot} Item`, popularity: 0.72, avgIlvl: Math.max(userItem.ilvl, 280) + 3 }]
-          : [],
-        score,
-        isMatch: score > 80,
-        isUpgrade: score < 50,
+        slot, userItem: userItem ? { ...userItem, name: itemName } : null,
+        topItems: userItem ? [{ itemId: userItem.itemId + 100, name: `Top ${slot} Item`, popularity: 0.72, avgIlvl: Math.max(userItem.ilvl, 280) + 3 }] : [],
+        score, isMatch: score > 80, isUpgrade: score < 50,
       };
     });
 
-    const avgStatScore = statsAvailable
-      ? statResults.reduce((s, r) => s + r.percentile, 0) / Math.max(statResults.length, 1)
-      : 0;
-    const avgGearScore = gearResults.reduce((s, r) => s + r.score, 0) / Math.max(gearResults.length, 1);
+    const statsAvailable = hasStats(char);
+    const avgStatScore = statsAvailable ? statResults.reduce((s, r) => s + r.percentile, 0) / 4 : 0;
+    const avgGearScore = gearResults.reduce((s, r) => s + r.score, 0) / gearResults.length;
 
-    const recommendations: ComparisonResult["recommendations"] = [];
-
-    if (!statsAvailable) {
-      recommendations.push({
-        type: "stat",
-        severity: "medium",
-        message: "No se pudieron obtener tus stats de Blizzard API. Verifica las credenciales API en la configuracion.",
-        currentValue: "--",
-        recommendedValue: "--",
-      });
-    } else {
-      statResults
-        .filter((s) => s.diffPercent < -10)
-        .forEach((s) => {
-          recommendations.push({
-            type: "stat",
-            severity: s.diffPercent < -20 ? "high" : "medium",
-            message: `Tu ${s.stat} esta ${Math.abs(s.diffPercent).toFixed(1)}% por debajo del promedio de top players`,
-            currentValue: s.userValue.toString(),
-            recommendedValue: s.topAvg.toString(),
-          });
-        });
-    }
-
-    gearResults
-      .filter((g) => !g.userItem)
-      .forEach((g) => {
-        recommendations.push({
-          type: "gear",
-          severity: "high",
-          message: `Slot ${g.slot.replace(/_/g, " ")} vacio`,
-          currentValue: "--",
-          recommendedValue: "Equipar item",
-        });
-      });
-
-    const result: ComparisonResult = {
+    return {
       contentType: ct,
       scores: {
-        stats: Math.round(avgStatScore),
-        gear: Math.round(avgGearScore),
-        talents: 0,
-        enchants: 0,
-        overall: Math.round(avgStatScore * 0.2 + avgGearScore * 0.35 + 15),
+        stats: Math.round(avgStatScore), gear: Math.round(avgGearScore),
+        talents: 0, enchants: 0, overall: Math.round(avgStatScore * 0.2 + avgGearScore * 0.35 + 15),
       },
-      stats: statResults,
-      gear: gearResults,
-      talents: [],
-      recommendations,
+      stats: statResults, gear: gearResults, talents: [],
+      recommendations: statsAvailable ? statResults
+        .filter((s) => s.diffPercent < -10)
+        .map((s) => ({
+          type: "stat" as const, severity: s.diffPercent < -20 ? ("high" as const) : ("medium" as const),
+          message: `Tu ${s.stat} esta ${Math.abs(s.diffPercent).toFixed(1)}% por debajo del promedio de top players`,
+          currentValue: s.userValue.toString(), recommendedValue: s.topAvg.toString(),
+        })) : [],
     };
-
-    setComparison(result);
   }
 
   return (
@@ -263,20 +259,14 @@ export default function ComparePage() {
             {loading ? "Analizando..." : "Analizar personaje"}
           </button>
           {errors.length > 0 && (
-            <div className="text-danger text-sm">
-              {errors.map((e, i) => (
-                <p key={i}>{e}</p>
-              ))}
-            </div>
+            <div className="text-danger text-sm">{errors.map((e, i) => <p key={i}>{e}</p>)}</div>
           )}
           {warnings.length > 0 && (
-            <div className="text-warning text-xs">
-              {warnings.length} aviso{warnings.length !== 1 ? "s" : ""}
-            </div>
+            <div className="text-warning text-xs">{warnings.length} aviso{warnings.length !== 1 ? "s" : ""}</div>
           )}
         </div>
         {apiStatus && (
-          <div className={`mt-3 text-sm ${apiStatus.startsWith("Blizzard API:") ? "text-warning" : "text-muted"}`}>
+          <div className={`mt-3 text-sm ${apiStatus.includes("Error") || apiStatus.includes("error") ? "text-danger" : apiStatus.includes("no disponible") || apiStatus.includes("estimada") ? "text-warning" : "text-muted"}`}>
             {apiStatus}
           </div>
         )}
@@ -295,9 +285,7 @@ export default function ComparePage() {
               <p className="text-sm text-muted">
                 {String(character.class)} {character.spec} - {character.race} - {character.server} ({String(character.region).toUpperCase()})
               </p>
-              <p className="text-xs text-muted mt-1">
-                {gearCount(character)} items equipados | Nivel {character.level}
-              </p>
+              <p className="text-xs text-muted mt-1">{gearCount(character)} items equipados | Nivel {character.level}</p>
             </div>
             <div className="ml-auto text-right">
               <div className="text-sm text-muted">Score Global</div>
@@ -309,16 +297,12 @@ export default function ComparePage() {
 
           {/* Content Type Toggle */}
           <div className="flex gap-2 mb-4">
-            <button
-              onClick={() => { setContentType("mythic_plus"); generateComparison(character, "mythic_plus", hasStats(character)); }}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${contentType === "mythic_plus" ? "bg-primary text-white" : "bg-card border border-border text-muted hover:text-foreground"}`}
-            >
+            <button onClick={() => { setContentType("mythic_plus"); if (character) fetchAndCompare(character, "mythic_plus"); }}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${contentType === "mythic_plus" ? "bg-primary text-white" : "bg-card border border-border text-muted hover:text-foreground"}`}>
               Mythic+
             </button>
-            <button
-              onClick={() => { setContentType("raid"); generateComparison(character, "raid", hasStats(character)); }}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${contentType === "raid" ? "bg-primary text-white" : "bg-card border border-border text-muted hover:text-foreground"}`}
-            >
+            <button onClick={() => { setContentType("raid"); if (character) fetchAndCompare(character, "raid"); }}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${contentType === "raid" ? "bg-primary text-white" : "bg-card border border-border text-muted hover:text-foreground"}`}>
               Raid
             </button>
           </div>
@@ -326,17 +310,14 @@ export default function ComparePage() {
           {/* Tabs */}
           <div className="flex gap-1 border-b border-border mb-6">
             {(["summary", "stats", "gear"] as const).map((tab) => (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px ${activeTab === tab ? "border-primary text-primary" : "border-transparent text-muted hover:text-foreground"}`}
-              >
+              <button key={tab} onClick={() => setActiveTab(tab)}
+                className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px ${activeTab === tab ? "border-primary text-primary" : "border-transparent text-muted hover:text-foreground"}`}>
                 {tab === "summary" ? "Resumen" : tab === "stats" ? "Stats" : "Gear"}
               </button>
             ))}
           </div>
 
-          {/* Tab Content */}
+          {/* Summary Tab */}
           {activeTab === "summary" && (
             <div className="space-y-4">
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -348,28 +329,19 @@ export default function ComparePage() {
                 ].map(({ label, score }) => (
                   <div key={label} className="bg-card border border-border rounded-lg p-4">
                     <div className="text-xs text-muted mb-1">{label}</div>
-                    <div className={`text-2xl font-bold ${score >= 70 ? "text-success" : score >= 40 ? "text-warning" : "text-danger"}`}>
-                      {score}
-                    </div>
+                    <div className={`text-2xl font-bold ${score >= 70 ? "text-success" : score >= 40 ? "text-warning" : "text-danger"}`}>{score}</div>
                     <div className="w-full bg-border rounded-full h-1.5 mt-2">
-                      <div
-                        className={`h-1.5 rounded-full stat-bar-fill ${score >= 70 ? "bg-success" : score >= 40 ? "bg-warning" : "bg-danger"}`}
-                        style={{ width: `${score}%` }}
-                      />
+                      <div className={`h-1.5 rounded-full stat-bar-fill ${score >= 70 ? "bg-success" : score >= 40 ? "bg-warning" : "bg-danger"}`} style={{ width: `${score}%` }} />
                     </div>
                   </div>
                 ))}
               </div>
-
               {comparison.recommendations.length > 0 && (
                 <div className="bg-card border border-border rounded-lg p-4">
                   <h3 className="font-semibold mb-3">Recomendaciones</h3>
                   <div className="space-y-2">
                     {comparison.recommendations.slice(0, 8).map((rec, i) => (
-                      <div
-                        key={i}
-                        className={`flex items-start gap-3 p-3 rounded-lg border ${rec.severity === "high" ? "border-danger/30 bg-danger/5" : rec.severity === "medium" ? "border-warning/30 bg-warning/5" : "border-border"}`}
-                      >
+                      <div key={i} className={`flex items-start gap-3 p-3 rounded-lg border ${rec.severity === "high" ? "border-danger/30 bg-danger/5" : rec.severity === "medium" ? "border-warning/30 bg-warning/5" : "border-border"}`}>
                         <span className={`text-xs font-semibold px-2 py-0.5 rounded ${rec.severity === "high" ? "bg-danger/20 text-danger" : rec.severity === "medium" ? "bg-warning/20 text-warning" : "bg-muted/20 text-muted"}`}>
                           {rec.severity === "high" ? "ALTO" : rec.severity === "medium" ? "MED" : "BAJO"}
                         </span>
@@ -382,13 +354,12 @@ export default function ComparePage() {
             </div>
           )}
 
+          {/* Stats Tab */}
           {activeTab === "stats" && (
             <div className="space-y-4">
               {!hasStats(character) && (
                 <div className="bg-warning/10 border border-warning/30 rounded-lg p-4 mb-4">
-                  <p className="text-sm text-warning">
-                    No se pudieron obtener tus stats de Blizzard API. Verifica que las credenciales BLIZZARD_CLIENT_ID y BLIZZARD_CLIENT_SECRET esten configuradas correctamente.
-                  </p>
+                  <p className="text-sm text-warning">No se pudieron obtener tus stats de Blizzard API.</p>
                 </div>
               )}
               {comparison.stats.map((stat) => (
@@ -401,26 +372,16 @@ export default function ComparePage() {
                         <span className={`text-sm font-semibold ${stat.diff >= 0 ? "text-success" : "text-danger"}`}>
                           {stat.diff >= 0 ? "+" : ""}{stat.diff.toLocaleString()} ({stat.diffPercent >= 0 ? "+" : ""}{stat.diffPercent}%)
                         </span>
-                      ) : (
-                        <span className="text-sm text-muted">--</span>
-                      )}
+                      ) : <span className="text-sm text-muted">--</span>}
                     </div>
                   </div>
                   <div className="relative h-8 bg-border/30 rounded-lg overflow-hidden">
                     <div className="absolute inset-y-0 left-0 bg-muted/10 rounded-lg" style={{ width: "100%" }} />
                     {stat.userValue > 0 && (
-                      <div
-                        className="absolute inset-y-0 left-0 stat-bar-fill rounded-lg flex items-center justify-end pr-2"
-                        style={{
-                          width: `${Math.min((stat.userValue / stat.topP100) * 100, 100)}%`,
-                          backgroundColor: stat.percentile >= 70 ? "var(--success)" : stat.percentile >= 40 ? "var(--warning)" : "var(--danger)",
-                        }}
-                      >
+                      <div className="absolute inset-y-0 left-0 stat-bar-fill rounded-lg flex items-center justify-end pr-2"
+                        style={{ width: `${Math.min((stat.userValue / Math.max(stat.topP100, 1)) * 100, 100)}%`, backgroundColor: stat.percentile >= 70 ? "var(--success)" : stat.percentile >= 40 ? "var(--warning)" : "var(--danger)" }}>
                         <span className="text-xs font-bold text-background">{stat.userValue.toLocaleString()}</span>
                       </div>
-                    )}
-                    {stat.userValue > 0 && (
-                      <div className="absolute inset-y-0 left-0 border-l-2 border-r-2 border-accent/50" style={{ width: `${(stat.topAvg / stat.topP100) * 100}%` }} title="Top avg" />
                     )}
                   </div>
                   <div className="flex justify-between text-xs text-muted mt-1">
@@ -434,6 +395,7 @@ export default function ComparePage() {
             </div>
           )}
 
+          {/* Gear Tab */}
           {activeTab === "gear" && (
             <div className="bg-card border border-border rounded-lg overflow-hidden">
               <table className="w-full">
@@ -458,38 +420,16 @@ export default function ComparePage() {
                       <tr key={g.slot} className="border-b border-border/50 hover:bg-card-hover">
                         <td className="px-4 py-3 text-sm font-medium capitalize">{g.slot.replace(/_/g, " ")}</td>
                         <td className="px-4 py-3 text-sm">
-                          {item ? (
-                            <span className="quality-epic">{itemName || `Item #${itemId}`}</span>
-                          ) : (
-                            <span className="text-muted">--</span>
-                          )}
+                          {item ? <span className="quality-epic">{itemName || `Item #${itemId}`}</span> : <span className="text-muted">--</span>}
                         </td>
                         <td className="px-4 py-3 text-right text-sm">
-                          {ilvl ? (
-                            <span className={`font-semibold ${ilvl >= 285 ? "text-accent" : ilvl >= 276 ? "text-foreground" : "text-muted"}`}>
-                              {ilvl}
-                            </span>
-                          ) : (
-                            <span className="text-muted">--</span>
-                          )}
+                          {ilvl ? <span className={`font-semibold ${ilvl >= 285 ? "text-accent" : ilvl >= 276 ? "text-foreground" : "text-muted"}`}>{ilvl}</span> : <span className="text-muted">--</span>}
                         </td>
                         <td className="px-4 py-3 text-center text-sm">
-                          {enchantId ? (
-                            <span className="text-success">Si</span>
-                          ) : item ? (
-                            <span className="text-danger">No</span>
-                          ) : (
-                            <span className="text-muted">--</span>
-                          )}
+                          {enchantId ? <span className="text-success">Si</span> : item ? <span className="text-danger">No</span> : <span className="text-muted">--</span>}
                         </td>
                         <td className="px-4 py-3 text-center text-sm">
-                          {gemIds && gemIds.length > 0 ? (
-                            <span className="text-accent">{gemIds.length}</span>
-                          ) : item ? (
-                            <span className="text-muted">--</span>
-                          ) : (
-                            <span className="text-muted">--</span>
-                          )}
+                          {gemIds && gemIds.length > 0 ? <span className="text-accent">{gemIds.length}</span> : item ? <span className="text-muted">--</span> : <span className="text-muted">--</span>}
                         </td>
                       </tr>
                     );
