@@ -8,6 +8,11 @@ import type { ComparisonResult } from "@/types/comparison";
 import type { ContentType } from "@/types/wow";
 import { CURRENT_SEASON, GEAR_SLOTS } from "@/types/wow";
 
+interface EncounterOption {
+  value: string;
+  label: string;
+}
+
 interface BlizzardStatsResponse {
   spell_crit?: { rating_normalized: number };
   melee_crit?: { rating_normalized: number };
@@ -27,6 +32,8 @@ export default function ComparePage() {
   const [warnings, setWarnings] = useState<ParseWarning[]>([]);
   const [errors, setErrors] = useState<string[]>([]);
   const [contentType, setContentType] = useState<ContentType>("mythic_plus");
+  const [encounters, setEncounters] = useState<EncounterOption[]>([]);
+  const [selectedBoss, setSelectedBoss] = useState<string>("all-bosses");
   const [comparison, setComparison] = useState<ComparisonResult | null>(null);
   const [activeTab, setActiveTab] = useState<"stats" | "gear" | "tips">("stats");
   const [loading, setLoading] = useState(false);
@@ -86,6 +93,9 @@ export default function ComparePage() {
       setCharacter({ ...char });
 
       // Step 2: Fetch aggregate data and run comparison
+      if (contentType === "raid") {
+        fetchEncountersForSpec(char.class, char.spec);
+      }
       await fetchAndCompare(char, contentType);
     } catch {
       setErrors(["Error parsing SimC string"]);
@@ -94,11 +104,40 @@ export default function ComparePage() {
     }
   }
 
-  async function fetchAndCompare(char: SimCCharacterOutput, ct: ContentType) {
+  async function fetchAndCompare(char: SimCCharacterOutput, ct: ContentType, boss?: string) {
     setApiStatus((prev) => prev || "Cargando datos de top players...");
     setComparison(null);
 
+    const effectiveBoss = boss ?? selectedBoss;
+
     try {
+      // For boss-specific raid data: fetch from archon.gg on-demand
+      if (ct === "raid" && effectiveBoss && effectiveBoss !== "all-bosses") {
+        setApiStatus(`Cargando datos de ${effectiveBoss} desde archon.gg...`);
+        const archonRes = await fetch(
+          `/api/compare/archon?classSlug=${char.class}&specSlug=${char.spec}&contentType=raid&encounter=${effectiveBoss}`
+        );
+        const archonJson = await archonRes.json();
+
+        if (archonJson.success && archonJson.aggregate) {
+          const compRes = await fetch("/api/compare", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ character: char, aggregate: archonJson.aggregate, contentType: ct }),
+          });
+          const compData = await compRes.json();
+          if (compData.success) {
+            setComparison(compData.result);
+            setApiStatus("");
+            return;
+          }
+        }
+        setApiStatus(`No se pudieron obtener datos para el boss seleccionado.`);
+        setComparison(null);
+        return;
+      }
+
+      // Default flow: DB aggregate -> on-demand sync
       const res = await fetch(
         `/api/compare/aggregate?classSlug=${char.class}&specSlug=${char.spec}&contentType=${ct}&season=${CURRENT_SEASON}`
       );
@@ -120,16 +159,12 @@ export default function ComparePage() {
       }
 
       // No aggregate data — try on-demand sync
-      setApiStatus("No hay datos de top players. Sincronizando desde Raider.IO...");
+      setApiStatus("No hay datos. Sincronizando desde archon.gg...");
       try {
         const syncRes = await fetch("/api/sync", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            classSlug: char.class,
-            specSlug: char.spec,
-            contentType: ct,
-          }),
+          body: JSON.stringify({ classSlug: char.class, specSlug: char.spec, contentType: ct }),
         });
         const syncData = await syncRes.json();
 
@@ -158,11 +193,23 @@ export default function ComparePage() {
         // Sync failed, fall through
       }
 
-      setApiStatus(`No se pudieron obtener datos de top players para ${char.class} ${char.spec}. Verifica la conexion a la base de datos y que las APIs esten configuradas.`);
+      setApiStatus(`No se pudieron obtener datos de top players para ${char.class} ${char.spec}.`);
       setComparison(null);
     } catch (e) {
       setApiStatus("Error al cargar datos de comparacion: " + (e instanceof Error ? e.message : String(e)));
       setComparison(null);
+    }
+  }
+
+  async function fetchEncountersForSpec(cls: string, spec: string) {
+    try {
+      const res = await fetch(`/api/compare/archon?classSlug=${cls}&specSlug=${spec}&contentType=raid&listEncounters=true`);
+      const data = await res.json();
+      if (data.success && data.encounters) {
+        setEncounters(data.encounters);
+      }
+    } catch {
+      // Ignore - encounters won't be available
     }
   }
 
@@ -282,10 +329,14 @@ export default function ComparePage() {
             </div>
           </div>
 
-          {/* Content Type Toggle */}
-          <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem" }}>
+          {/* Content Type Toggle + Boss Selector */}
+          <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem", alignItems: "center", flexWrap: "wrap" }}>
             <button
-              onClick={() => { setContentType("mythic_plus"); if (character) fetchAndCompare(character, "mythic_plus"); }}
+              onClick={() => {
+                setContentType("mythic_plus");
+                setSelectedBoss("all-bosses");
+                if (character) fetchAndCompare(character, "mythic_plus", "all-bosses");
+              }}
               style={{
                 padding: "0.5rem 1rem",
                 borderRadius: "0.5rem",
@@ -301,7 +352,13 @@ export default function ComparePage() {
               Mythic+
             </button>
             <button
-              onClick={() => { setContentType("raid"); if (character) fetchAndCompare(character, "raid"); }}
+              onClick={() => {
+                setContentType("raid");
+                if (character) {
+                  fetchEncountersForSpec(character.class, character.spec);
+                  fetchAndCompare(character, "raid", "all-bosses");
+                }
+              }}
               style={{
                 padding: "0.5rem 1rem",
                 borderRadius: "0.5rem",
@@ -316,6 +373,36 @@ export default function ComparePage() {
             >
               Raid
             </button>
+
+            {/* Boss selector (only in raid mode) */}
+            {contentType === "raid" && encounters.length > 0 && (
+              <select
+                value={selectedBoss}
+                onChange={(e) => {
+                  const boss = e.target.value;
+                  setSelectedBoss(boss);
+                  if (character) fetchAndCompare(character, "raid", boss);
+                }}
+                style={{
+                  padding: "0.5rem 0.75rem",
+                  borderRadius: "0.5rem",
+                  fontSize: "0.875rem",
+                  fontWeight: 500,
+                  border: "1px solid var(--border)",
+                  background: "var(--card)",
+                  color: "var(--foreground)",
+                  cursor: "pointer",
+                  outline: "none",
+                  marginLeft: "0.25rem",
+                }}
+              >
+                {encounters.map((enc) => (
+                  <option key={enc.value} value={enc.value}>
+                    {enc.label}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
 
           {/* Tabs */}

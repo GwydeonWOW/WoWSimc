@@ -76,6 +76,13 @@ export interface ArchonPageData {
   trinkets: ArchonGearItem[];
   totalParses: number;
   lastUpdated: string;
+  encounters?: ArchonEncounter[];
+}
+
+export interface ArchonEncounter {
+  value: string; // slug like "all-bosses", "imperator"
+  label: string; // display name like "All Bosses", "Imperator"
+  url: string;   // full path
 }
 
 function getArchonClassSlug(ourClassSlug: string): string {
@@ -87,14 +94,15 @@ function getArchonSpecSlug(ourSpecSlug: string): string {
 }
 
 /**
- * Build the archon.gg URL for a class/spec/content combo
+ * Build the archon.gg URL for a class/spec/content/encounter combo
  */
-function buildArchonUrl(classSlug: string, specSlug: string, contentType: string): string {
+function buildArchonUrl(classSlug: string, specSlug: string, contentType: string, encounter?: string): string {
   const archonClass = getArchonClassSlug(classSlug);
   const archonSpec = getArchonSpecSlug(specSlug);
 
   if (contentType === "raid") {
-    return `${ARCHON_BASE}/${archonSpec}/${archonClass}/raid/overview/mythic/all-bosses`;
+    const boss = encounter || "all-bosses";
+    return `${ARCHON_BASE}/${archonSpec}/${archonClass}/raid/overview/mythic/${boss}`;
   }
   // Default: M+
   return `${ARCHON_BASE}/${archonSpec}/${archonClass}/mythic-plus/overview/10/all-dungeons/this-week`;
@@ -106,9 +114,10 @@ function buildArchonUrl(classSlug: string, specSlug: string, contentType: string
 export async function fetchArchonData(
   classSlug: string,
   specSlug: string,
-  contentType: string = "mythic_plus"
+  contentType: string = "mythic_plus",
+  encounter?: string
 ): Promise<ArchonPageData> {
-  const url = buildArchonUrl(classSlug, specSlug, contentType);
+  const url = buildArchonUrl(classSlug, specSlug, contentType, encounter);
 
   const response = await fetch(url, {
     headers: {
@@ -210,6 +219,18 @@ export function parseArchonHTML(html: string): ArchonPageData {
     }
   }
 
+  // Extract encounter options (for raid boss selection)
+  const encounters: ArchonEncounter[] = [];
+  const encounterOpts = page.encounterOptions || [];
+  for (const opt of encounterOpts) {
+    if (opt.value && opt.url) {
+      // Label may contain pseudo-JSX like <EncounterIcon id='3176'>Name</EncounterIcon>
+      const labelMatch = (opt.label || "").match(/>([^<]+)<\/\w+>$/);
+      const label = labelMatch ? labelMatch[1] : (opt.label || opt.value);
+      encounters.push({ value: opt.value, label, url: opt.url });
+    }
+  }
+
   return {
     stats,
     statPriority,
@@ -218,6 +239,7 @@ export function parseArchonHTML(html: string): ArchonPageData {
     trinkets,
     totalParses: page.totalParses || 0,
     lastUpdated: page.lastUpdated || "",
+    encounters,
   };
 }
 
