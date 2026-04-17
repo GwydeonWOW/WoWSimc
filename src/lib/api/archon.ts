@@ -92,7 +92,12 @@ export interface ArchonTalentBuild {
   selectedNodes: number[][];
   className: string;
   specName: string;
-  changeSetId?: string;
+  changeSetId?: number;
+  exportCode?: string;
+  heroSpecId?: number;
+  isDefaultSelection: boolean;
+  reportUrl?: string;
+  metricTiles?: { label: string; value: string }[];
 }
 
 function getArchonClassSlug(ourClassSlug: string): string {
@@ -250,13 +255,19 @@ export function parseArchonHTML(html: string): ArchonPageData {
         for (const alt of (set.alternatives || [])) {
           const tree = alt.talentTree?.dehydratedBuild;
           if (tree?.selectedNodes) {
+            const exportCode = alt.talentTree?.exportCodeParams?.exportCode || "";
             talentBuilds.push({
               title: alt.title || set.title || "Build",
-              popularity: alt.popularity || 0,
+              popularity: typeof alt.popularity === "string" ? parseFloat(alt.popularity) : (alt.popularity || 0),
               selectedNodes: tree.selectedNodes,
               className: tree.changeSet?.className || "",
               specName: tree.changeSet?.specName || "",
               changeSetId: tree.changeSet?.changeSetId,
+              exportCode,
+              heroSpecId: tree.heroSpecId,
+              isDefaultSelection: alt.isDefaultSelection || false,
+              reportUrl: alt.reportUrl || "",
+              metricTiles: (set.metricTiles || []).map((t: { label: string; value: string }) => ({ label: t.label, value: t.value })),
             });
           }
         }

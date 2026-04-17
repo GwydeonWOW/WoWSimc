@@ -19,7 +19,12 @@ interface TalentBuild {
   selectedNodes: number[][];
   className: string;
   specName: string;
-  changeSetId?: string;
+  changeSetId?: number;
+  exportCode?: string;
+  heroSpecId?: number;
+  isDefaultSelection: boolean;
+  reportUrl?: string;
+  metricTiles?: { label: string; value: string }[];
 }
 
 interface BlizzardStatsResponse {
@@ -818,57 +823,91 @@ export default function ComparePage() {
                 ) : (
                   <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
                     {talentBuilds.map((build, idx) => {
-                      const popPct = Math.round(build.popularity);
-                      // Build Wowhead talent calculator URL from selectedNodes
-                      const nodeIds = build.selectedNodes.map((n) => n[0]).filter(Boolean);
-                      const talentHash = nodeIds.join("-");
-                      const wowheadUrl = build.className && build.specName
-                        ? `https://www.wowhead.com/talent-calculator/${build.className}/${build.specName}#${talentHash}`
+                      // popularity can be string like "28.8%" or number
+                      const popNum = typeof build.popularity === "string"
+                        ? parseFloat(build.popularity)
+                        : build.popularity;
+                      const popPct = Math.round(popNum);
+
+                      // Wowhead talent calculator uses exportCode from archon.gg
+                      const wowheadUrl = build.exportCode
+                        ? `https://www.wowhead.com/talent-calculator#export/${build.exportCode}`
                         : null;
 
                       return (
                         <div key={idx} style={{
                           background: "var(--card-hover)",
-                          border: "1px solid var(--border)",
+                          border: `1px solid ${idx === 0 ? "rgba(63, 185, 80, 0.3)" : "var(--border)"}`,
                           borderRadius: "0.5rem",
                           padding: "1rem",
                         }}>
-                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
-                            <div>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                              {idx === 0 && (
+                                <span style={{
+                                  fontSize: "0.65rem",
+                                  fontWeight: 700,
+                                  padding: "0.1rem 0.4rem",
+                                  borderRadius: "0.25rem",
+                                  background: "rgba(63, 185, 80, 0.15)",
+                                  color: "var(--success)",
+                                  textTransform: "uppercase",
+                                }}>
+                                  Top
+                                </span>
+                              )}
                               <span style={{ fontWeight: 600, fontSize: "0.9375rem" }}>
                                 {build.title || `Build ${idx + 1}`}
                               </span>
+                            </div>
+                            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
                               <span style={{
-                                marginLeft: "0.5rem",
-                                fontSize: "0.75rem",
+                                fontSize: "0.8rem",
                                 fontWeight: 700,
                                 color: popPct >= 50 ? "var(--success)" : popPct >= 20 ? "var(--warning)" : "var(--muted)",
                               }}>
-                                {popPct}% popularidad
+                                {popPct}%
                               </span>
+                              {wowheadUrl && (
+                                <a
+                                  href={wowheadUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  style={{
+                                    fontSize: "0.75rem",
+                                    color: "var(--primary)",
+                                    textDecoration: "none",
+                                    padding: "0.25rem 0.5rem",
+                                    border: "1px solid var(--primary)",
+                                    borderRadius: "0.25rem",
+                                  }}
+                                >
+                                  Wowhead
+                                </a>
+                              )}
+                              {build.reportUrl && (
+                                <a
+                                  href={build.reportUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  style={{
+                                    fontSize: "0.75rem",
+                                    color: "var(--muted)",
+                                    textDecoration: "none",
+                                    padding: "0.25rem 0.5rem",
+                                    border: "1px solid var(--border)",
+                                    borderRadius: "0.25rem",
+                                  }}
+                                >
+                                  WCL Log
+                                </a>
+                              )}
                             </div>
-                            {wowheadUrl && (
-                              <a
-                                href={wowheadUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                style={{
-                                  fontSize: "0.75rem",
-                                  color: "var(--primary)",
-                                  textDecoration: "none",
-                                  padding: "0.25rem 0.5rem",
-                                  border: "1px solid var(--primary)",
-                                  borderRadius: "0.25rem",
-                                }}
-                              >
-                                Ver en Wowhead
-                              </a>
-                            )}
                           </div>
 
                           {/* Popularity bar */}
                           <div style={{
-                            height: "0.5rem",
+                            height: "0.375rem",
                             background: "rgba(48, 54, 61, 0.5)",
                             borderRadius: "9999px",
                             overflow: "hidden",
@@ -883,41 +922,53 @@ export default function ComparePage() {
                             }} />
                           </div>
 
-                          {/* Talent nodes */}
-                          <div style={{ display: "flex", flexWrap: "wrap", gap: "0.25rem" }}>
-                            {nodeIds.slice(0, 30).map((nodeId, ni) => (
-                              <a
-                                key={ni}
-                                href={`https://www.wowhead.com/spell=${nodeId}`}
-                                data-wh-rename="false"
-                                target="_blank"
-                                rel="noopener noreferrer"
+                          {/* Metric tiles */}
+                          {build.metricTiles && build.metricTiles.length > 0 && (
+                            <div style={{ display: "flex", gap: "1rem", marginBottom: "0.5rem" }}>
+                              {build.metricTiles.map((tile, ti) => (
+                                <div key={ti}>
+                                  <span style={{ fontSize: "0.65rem", color: "var(--muted)" }}>{tile.label}: </span>
+                                  <span style={{ fontSize: "0.75rem", fontWeight: 600 }}>{tile.value}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          {/* Export code (copyable) */}
+                          {build.exportCode && (
+                            <div style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "0.5rem",
+                              padding: "0.5rem",
+                              background: "rgba(0,0,0,0.2)",
+                              borderRadius: "0.25rem",
+                              fontSize: "0.75rem",
+                            }}>
+                              <code style={{
+                                flex: 1,
+                                color: "var(--muted)",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                whiteSpace: "nowrap",
+                              }}>
+                                {build.exportCode}
+                              </code>
+                              <button
+                                onClick={() => navigator.clipboard?.writeText(build.exportCode!)}
                                 style={{
                                   fontSize: "0.7rem",
-                                  padding: "0.125rem 0.375rem",
-                                  background: "rgba(255,255,255,0.05)",
+                                  padding: "0.2rem 0.5rem",
                                   border: "1px solid var(--border)",
                                   borderRadius: "0.25rem",
+                                  background: "var(--card)",
                                   color: "var(--muted)",
-                                  textDecoration: "none",
+                                  cursor: "pointer",
+                                  flexShrink: 0,
                                 }}
                               >
-                                {nodeId}
-                              </a>
-                            ))}
-                            {nodeIds.length > 30 && (
-                              <span style={{ fontSize: "0.7rem", color: "var(--muted)", padding: "0.125rem 0.375rem" }}>
-                                +{nodeIds.length - 30} mas
-                              </span>
-                            )}
-                          </div>
-
-                          {/* Archon.gg link */}
-                          {build.changeSetId && (
-                            <div style={{ marginTop: "0.5rem" }}>
-                              <span style={{ fontSize: "0.7rem", color: "var(--muted)" }}>
-                                Build ID: {build.changeSetId}
-                              </span>
+                                Copiar
+                              </button>
                             </div>
                           )}
                         </div>
