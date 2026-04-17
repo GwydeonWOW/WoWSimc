@@ -100,6 +100,7 @@ export async function GET(request: Request) {
         gemPopularity,
         playerCount: data.totalParses,
       },
+      talentBuilds: data.talentBuilds || [],
       encounters: data.encounters || [],
     });
   } catch (error) {

@@ -77,12 +77,22 @@ export interface ArchonPageData {
   totalParses: number;
   lastUpdated: string;
   encounters?: ArchonEncounter[];
+  talentBuilds?: ArchonTalentBuild[];
 }
 
 export interface ArchonEncounter {
   value: string; // slug like "all-bosses", "imperator"
   label: string; // display name like "All Bosses", "Imperator"
   url: string;   // full path
+}
+
+export interface ArchonTalentBuild {
+  title: string;
+  popularity: number;
+  selectedNodes: number[][];
+  className: string;
+  specName: string;
+  changeSetId?: string;
 }
 
 function getArchonClassSlug(ourClassSlug: string): string {
@@ -231,6 +241,30 @@ export function parseArchonHTML(html: string): ArchonPageData {
     }
   }
 
+  // Extract talent builds
+  const talentBuilds: ArchonTalentBuild[] = [];
+  for (const section of sections) {
+    if (section.component === "BuildsTalentTreeBuildSection") {
+      const buildSets = section.props?.talentTreeBuildSets || [];
+      for (const set of buildSets) {
+        for (const alt of (set.alternatives || [])) {
+          const tree = alt.talentTree?.dehydratedBuild;
+          if (tree?.selectedNodes) {
+            talentBuilds.push({
+              title: alt.title || set.title || "Build",
+              popularity: alt.popularity || 0,
+              selectedNodes: tree.selectedNodes,
+              className: tree.changeSet?.className || "",
+              specName: tree.changeSet?.specName || "",
+              changeSetId: tree.changeSet?.changeSetId,
+            });
+          }
+        }
+      }
+      break;
+    }
+  }
+
   return {
     stats,
     statPriority,
@@ -240,6 +274,7 @@ export function parseArchonHTML(html: string): ArchonPageData {
     totalParses: page.totalParses || 0,
     lastUpdated: page.lastUpdated || "",
     encounters,
+    talentBuilds,
   };
 }
 
@@ -255,9 +290,10 @@ function parseGearIcon(rawItem: { icon: string; topLabel: string; bottomLabel: s
   if (!idMatch) return null;
   const itemId = parseInt(idMatch[1], 10);
 
-  // Extract item name - two formats in archon.gg:
+  // Extract item name - multiple formats in archon.gg:
   // 1. BiS items with wowhead badge: <span>&nbsp;Item Name</span>
   // 2. Non-BiS items: '>Item Name</GearIcon>  or  '>Item Name at end of string
+  // 3. Generic fallback: any text between > and < in the icon string
   let name = `Item ${itemId}`;
   const spanMatch = icon.match(/&nbsp;(.+?)<\/span>/);
   if (spanMatch) {
@@ -272,6 +308,23 @@ function parseGearIcon(rawItem: { icon: string; topLabel: string; bottomLabel: s
       if (candidate && !candidate.startsWith("<")) {
         name = candidate;
       }
+    }
+  }
+  // Fallback 3: if still "Item {id}", try any text content between > and < anywhere
+  if (name.startsWith("Item ")) {
+    const allTextParts: string[] = [];
+    const textRegex = />([^<>{&]+)</g;
+    let m;
+    while ((m = textRegex.exec(icon)) !== null) {
+      const txt = m[1].trim();
+      if (txt.length > 2 && !/^\d+%?$/.test(txt)) {
+        allTextParts.push(txt);
+      }
+    }
+    // Pick the longest meaningful text segment (likely the item name)
+    if (allTextParts.length > 0) {
+      allTextParts.sort((a, b) => b.length - a.length);
+      name = allTextParts[0];
     }
   }
 

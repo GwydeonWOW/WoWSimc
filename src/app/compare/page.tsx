@@ -13,6 +13,15 @@ interface EncounterOption {
   label: string;
 }
 
+interface TalentBuild {
+  title: string;
+  popularity: number;
+  selectedNodes: number[][];
+  className: string;
+  specName: string;
+  changeSetId?: string;
+}
+
 interface BlizzardStatsResponse {
   spell_crit?: { rating_normalized: number };
   melee_crit?: { rating_normalized: number };
@@ -35,9 +44,10 @@ export default function ComparePage() {
   const [encounters, setEncounters] = useState<EncounterOption[]>([]);
   const [selectedBoss, setSelectedBoss] = useState<string>("all-bosses");
   const [comparison, setComparison] = useState<ComparisonResult | null>(null);
-  const [activeTab, setActiveTab] = useState<"stats" | "gear" | "tips">("stats");
+  const [activeTab, setActiveTab] = useState<"stats" | "gear" | "talents" | "tips">("stats");
   const [loading, setLoading] = useState(false);
   const [apiStatus, setApiStatus] = useState<string>("");
+  const [talentBuilds, setTalentBuilds] = useState<TalentBuild[]>([]);
 
   const hasStats = (char: SimCCharacterOutput) =>
     char.stats.critRating > 0 || char.stats.hasteRating > 0 || char.stats.masteryRating > 0 || char.stats.versatilityRating > 0;
@@ -107,6 +117,7 @@ export default function ComparePage() {
   async function fetchAndCompare(char: SimCCharacterOutput, ct: ContentType, boss?: string) {
     setApiStatus((prev) => prev || "Cargando datos de top players...");
     setComparison(null);
+    setTalentBuilds([]);
 
     const effectiveBoss = boss ?? selectedBoss;
 
@@ -120,6 +131,7 @@ export default function ComparePage() {
         const archonJson = await archonRes.json();
 
         if (archonJson.success && archonJson.aggregate) {
+          setTalentBuilds(archonJson.talentBuilds || []);
           const compRes = await fetch("/api/compare", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -142,6 +154,9 @@ export default function ComparePage() {
         `/api/compare/aggregate?classSlug=${char.class}&specSlug=${char.spec}&contentType=${ct}&season=${CURRENT_SEASON}`
       );
       const data = await res.json();
+
+      // Fetch talent builds from archon.gg in parallel
+      fetchTalentBuilds(char.class, char.spec, ct);
 
       if (data.success && data.aggregate) {
         const compRes = await fetch("/api/compare", {
@@ -198,6 +213,19 @@ export default function ComparePage() {
     } catch (e) {
       setApiStatus("Error al cargar datos de comparacion: " + (e instanceof Error ? e.message : String(e)));
       setComparison(null);
+    }
+  }
+
+  async function fetchTalentBuilds(cls: string, spec: string, ct: ContentType) {
+    try {
+      const ctParam = ct === "raid" ? "raid" : "mythic_plus";
+      const res = await fetch(`/api/compare/archon?classSlug=${cls}&specSlug=${spec}&contentType=${ctParam}`);
+      const data = await res.json();
+      if (data.success && data.talentBuilds) {
+        setTalentBuilds(data.talentBuilds);
+      }
+    } catch {
+      // Talent builds are optional — ignore errors
     }
   }
 
@@ -407,7 +435,7 @@ export default function ComparePage() {
 
           {/* Tabs */}
           <div style={{ display: "flex", gap: "0.25rem", borderBottom: "2px solid var(--border)", marginBottom: "1.5rem" }}>
-            {(["stats", "gear", "tips"] as const).map((tab) => (
+            {(["stats", "gear", "talents", "tips"] as const).map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
@@ -424,7 +452,7 @@ export default function ComparePage() {
                   outline: "none",
                 }}
               >
-                {tab === "stats" ? "Stats" : tab === "gear" ? "Gear" : "Recomendaciones"}
+                {tab === "stats" ? "Stats" : tab === "gear" ? "Gear" : tab === "talents" ? "Talentos" : "Recomendaciones"}
               </button>
             ))}
           </div>
@@ -656,13 +684,30 @@ export default function ComparePage() {
                       <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
                         {userItem ? (
                           <>
-                            <span style={{
-                              fontSize: "0.875rem",
-                              fontWeight: 500,
-                              color: isMatch ? "var(--success)" : "var(--foreground)",
-                            }}>
-                              {userName || `Item #${userId}`}
-                            </span>
+                            {userId ? (
+                              <a
+                                href={`https://www.wowhead.com/item=${userId}`}
+                                data-wh-rename="false"
+                                style={{
+                                  fontSize: "0.875rem",
+                                  fontWeight: 500,
+                                  color: isMatch ? "var(--success)" : "var(--foreground)",
+                                  textDecoration: "none",
+                                }}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                              >
+                                {userName || `Item #${userId}`}
+                              </a>
+                            ) : (
+                              <span style={{
+                                fontSize: "0.875rem",
+                                fontWeight: 500,
+                                color: "var(--foreground)",
+                              }}>
+                                {userName || "—"}
+                              </span>
+                            )}
                             {userIlvl && (
                               <span style={{
                                 fontSize: "0.75rem",
@@ -696,13 +741,20 @@ export default function ComparePage() {
                         {topItem ? (
                           <div>
                             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.25rem" }}>
-                              <span style={{
-                                fontSize: "0.875rem",
-                                fontWeight: 500,
-                                color: isMatch ? "var(--success)" : "var(--primary)",
-                              }}>
+                              <a
+                                href={`https://www.wowhead.com/item=${topItem.itemId}`}
+                                data-wh-rename="false"
+                                style={{
+                                  fontSize: "0.875rem",
+                                  fontWeight: 500,
+                                  color: isMatch ? "var(--success)" : "var(--primary)",
+                                  textDecoration: "none",
+                                }}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                              >
                                 {topName}
-                              </span>
+                              </a>
                               <span style={{
                                 fontSize: "0.75rem",
                                 fontWeight: 700,
@@ -738,6 +790,141 @@ export default function ComparePage() {
                     </div>
                   );
                 })}
+              </div>
+            </div>
+          )}
+
+          {/* ===== Talents Tab ===== */}
+          {activeTab === "talents" && (
+            <div>
+              <div style={{
+                background: "var(--card)",
+                border: "1px solid var(--border)",
+                borderRadius: "0.5rem",
+                padding: "1.5rem",
+              }}>
+                <h3 style={{ fontWeight: 600, marginBottom: "0.5rem" }}>Builds de Talentos</h3>
+                <p style={{ fontSize: "0.75rem", color: "var(--muted)", marginBottom: "1rem" }}>
+                  Builds mas populares de top players segun archon.gg. {contentType === "raid" && selectedBoss !== "all-bosses" ? `Datos para ${selectedBoss}.` : ""}
+                </p>
+
+                {talentBuilds.length === 0 ? (
+                  <div style={{ textAlign: "center", padding: "2rem" }}>
+                    <p style={{ color: "var(--muted)" }}>No hay datos de talentos disponibles.</p>
+                    <p style={{ fontSize: "0.75rem", color: "var(--muted)", marginTop: "0.5rem" }}>
+                      Los datos de talentos se cargan desde archon.gg.
+                    </p>
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                    {talentBuilds.map((build, idx) => {
+                      const popPct = Math.round(build.popularity);
+                      // Build Wowhead talent calculator URL from selectedNodes
+                      const nodeIds = build.selectedNodes.map((n) => n[0]).filter(Boolean);
+                      const talentHash = nodeIds.join("-");
+                      const wowheadUrl = build.className && build.specName
+                        ? `https://www.wowhead.com/talent-calculator/${build.className}/${build.specName}#${talentHash}`
+                        : null;
+
+                      return (
+                        <div key={idx} style={{
+                          background: "var(--card-hover)",
+                          border: "1px solid var(--border)",
+                          borderRadius: "0.5rem",
+                          padding: "1rem",
+                        }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
+                            <div>
+                              <span style={{ fontWeight: 600, fontSize: "0.9375rem" }}>
+                                {build.title || `Build ${idx + 1}`}
+                              </span>
+                              <span style={{
+                                marginLeft: "0.5rem",
+                                fontSize: "0.75rem",
+                                fontWeight: 700,
+                                color: popPct >= 50 ? "var(--success)" : popPct >= 20 ? "var(--warning)" : "var(--muted)",
+                              }}>
+                                {popPct}% popularidad
+                              </span>
+                            </div>
+                            {wowheadUrl && (
+                              <a
+                                href={wowheadUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                style={{
+                                  fontSize: "0.75rem",
+                                  color: "var(--primary)",
+                                  textDecoration: "none",
+                                  padding: "0.25rem 0.5rem",
+                                  border: "1px solid var(--primary)",
+                                  borderRadius: "0.25rem",
+                                }}
+                              >
+                                Ver en Wowhead
+                              </a>
+                            )}
+                          </div>
+
+                          {/* Popularity bar */}
+                          <div style={{
+                            height: "0.5rem",
+                            background: "rgba(48, 54, 61, 0.5)",
+                            borderRadius: "9999px",
+                            overflow: "hidden",
+                            marginBottom: "0.75rem",
+                          }}>
+                            <div style={{
+                              width: `${popPct}%`,
+                              height: "100%",
+                              borderRadius: "9999px",
+                              background: popPct >= 50 ? "var(--success)" : popPct >= 20 ? "var(--primary)" : "var(--warning)",
+                              transition: "width 0.5s ease-out",
+                            }} />
+                          </div>
+
+                          {/* Talent nodes */}
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: "0.25rem" }}>
+                            {nodeIds.slice(0, 30).map((nodeId, ni) => (
+                              <a
+                                key={ni}
+                                href={`https://www.wowhead.com/spell=${nodeId}`}
+                                data-wh-rename="false"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                style={{
+                                  fontSize: "0.7rem",
+                                  padding: "0.125rem 0.375rem",
+                                  background: "rgba(255,255,255,0.05)",
+                                  border: "1px solid var(--border)",
+                                  borderRadius: "0.25rem",
+                                  color: "var(--muted)",
+                                  textDecoration: "none",
+                                }}
+                              >
+                                {nodeId}
+                              </a>
+                            ))}
+                            {nodeIds.length > 30 && (
+                              <span style={{ fontSize: "0.7rem", color: "var(--muted)", padding: "0.125rem 0.375rem" }}>
+                                +{nodeIds.length - 30} mas
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Archon.gg link */}
+                          {build.changeSetId && (
+                            <div style={{ marginTop: "0.5rem" }}>
+                              <span style={{ fontSize: "0.7rem", color: "var(--muted)" }}>
+                                Build ID: {build.changeSetId}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </div>
           )}
