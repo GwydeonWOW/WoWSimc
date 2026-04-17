@@ -60,7 +60,7 @@ export async function POST(request: Request) {
       try {
         const result = await syncForSpec(cls, spec, contentType as "mythic_plus" | "raid", region, season);
         results.push({ classSlug: cls, specSlug: spec, synced: result.synced, errors: result.errors });
-        // Rate limit: wait 500ms between murlok requests
+        // Rate limit: wait 500ms between archon.gg requests
         if (i < allSpecs.length - 1) {
           await new Promise((r) => setTimeout(r, 500));
         }
