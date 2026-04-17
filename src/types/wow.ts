@@ -1,6 +1,6 @@
 // WoW Class/Spec constants and types
 
-export const CURRENT_SEASON = "season-tww-3";
+export const CURRENT_SEASON = "season-midnight-1";
 
 export const WOW_CLASSES = [
   "deathknight",
