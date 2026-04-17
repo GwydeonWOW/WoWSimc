@@ -233,9 +233,25 @@ function parseGearIcon(rawItem: { icon: string; topLabel: string; bottomLabel: s
   if (!idMatch) return null;
   const itemId = parseInt(idMatch[1], 10);
 
-  // Extract item name: &nbsp;Item Name</span>
-  const nameMatch = icon.match(/&nbsp;(.+?)<\/span>/);
-  const name = nameMatch ? nameMatch[1] : `Item ${itemId}`;
+  // Extract item name - two formats in archon.gg:
+  // 1. BiS items with wowhead badge: <span>&nbsp;Item Name</span>
+  // 2. Non-BiS items: '>Item Name</GearIcon>  or  '>Item Name at end of string
+  let name = `Item ${itemId}`;
+  const spanMatch = icon.match(/&nbsp;(.+?)<\/span>/);
+  if (spanMatch) {
+    name = spanMatch[1];
+  } else {
+    // Try format 2: name after last '>' before </GearIcon> or end of string
+    const gearIconEnd = icon.indexOf("</GearIcon>");
+    const searchEnd = gearIconEnd > -1 ? gearIconEnd : icon.length;
+    const lastGt = icon.lastIndexOf(">", searchEnd);
+    if (lastGt > -1 && lastGt < searchEnd - 1) {
+      const candidate = icon.substring(lastGt + 1, searchEnd).trim();
+      if (candidate && !candidate.startsWith("<")) {
+        name = candidate;
+      }
+    }
+  }
 
   // Popularity percentage: "86.4%"
   const popularity = parseFloat(rawItem.topLabel) || 0;
