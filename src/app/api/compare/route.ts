@@ -19,7 +19,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const result = compareCharacter(character, aggregate as Parameters<typeof compareCharacter>[1], contentType);
+    const result = compareCharacter(character, aggregate as unknown as Parameters<typeof compareCharacter>[1], contentType);
 
     return NextResponse.json({
       success: true,

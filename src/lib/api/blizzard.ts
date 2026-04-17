@@ -54,12 +54,18 @@ interface BlizzardCharacterStats {
   agility: BlizzardStat;
   intellect: BlizzardStat;
   stamina: BlizzardStat;
-  crit: BlizzardStat;
-  haste: BlizzardStat;
-  mastery: BlizzardStat;
-  versatility_damage_done: BlizzardStat;
-  versatility_healing_done: BlizzardStat;
-  versatility_damage_taken: BlizzardStat;
+  // API returns spell_crit / melee_crit / ranged_crit, not just "crit"
+  crit?: BlizzardStat;
+  spell_crit?: { rating_bonus: number; value: number; rating_normalized: number };
+  melee_crit?: { rating_bonus: number; value: number; rating_normalized: number };
+  haste?: BlizzardStat;
+  spell_haste?: { rating_bonus: number; value: number; rating_normalized: number };
+  melee_haste?: { rating_bonus: number; value: number; rating_normalized: number };
+  mastery?: { rating_bonus: number; value: number; rating_normalized: number };
+  versatility?: number;
+  versatility_damage_done?: BlizzardStat;
+  versatility_healing_done?: BlizzardStat;
+  versatility_damage_taken?: BlizzardStat;
 }
 
 interface BlizzardMythicKeystoneProfile {
