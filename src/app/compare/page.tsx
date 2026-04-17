@@ -523,76 +523,134 @@ export default function ComparePage() {
                 ))}
               </div>
 
-              {/* Gear table */}
-              <div style={{
-                background: "var(--card)",
-                border: "1px solid var(--border)",
-                borderRadius: "0.5rem",
-                overflow: "hidden",
-              }}>
-                <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                  <thead>
-                    <tr style={{ borderBottom: "1px solid var(--border)" }}>
-                      <th style={{ textAlign: "left", fontSize: "0.75rem", color: "var(--muted)", fontWeight: 500, padding: "0.75rem 1rem" }}>Slot</th>
-                      <th style={{ textAlign: "left", fontSize: "0.75rem", color: "var(--muted)", fontWeight: 500, padding: "0.75rem 1rem" }}>Tu Item</th>
-                      <th style={{ textAlign: "right", fontSize: "0.75rem", color: "var(--muted)", fontWeight: 500, padding: "0.75rem 1rem" }}>ilvl</th>
-                      <th style={{ textAlign: "center", fontSize: "0.75rem", color: "var(--muted)", fontWeight: 500, padding: "0.75rem 1rem" }}>Enc</th>
-                      <th style={{ textAlign: "center", fontSize: "0.75rem", color: "var(--muted)", fontWeight: 500, padding: "0.75rem 1rem" }}>Gema</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {comparison.gear.map((g) => {
-                      const item = g.userItem as Record<string, unknown> | null;
-                      const itemName = item?.name as string | undefined;
-                      const itemId = item?.itemId as number | undefined;
-                      const ilvl = item?.ilvl as number | undefined;
-                      const enchantId = item?.enchantId as number | undefined;
-                      const gemIds = item?.gemIds as number[] | undefined;
-                      return (
-                        <tr key={g.slot} style={{ borderBottom: "1px solid rgba(48, 54, 61, 0.5)" }}>
-                          <td style={{ padding: "0.75rem 1rem", fontSize: "0.875rem", fontWeight: 500, textTransform: "capitalize" }}>
-                            {g.slot.replace(/_/g, " ")}
-                          </td>
-                          <td style={{ padding: "0.75rem 1rem", fontSize: "0.875rem" }}>
-                            {item ? (
-                              <span className="quality-epic">{itemName || `Item #${itemId}`}</span>
-                            ) : (
-                              <span style={{ color: "var(--muted)" }}>—</span>
-                            )}
-                          </td>
-                          <td style={{ padding: "0.75rem 1rem", fontSize: "0.875rem", textAlign: "right" }}>
-                            {ilvl ? (
+              {/* Gear comparison cards */}
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                {comparison.gear.map((g) => {
+                  const userItem = g.userItem as Record<string, unknown> | null;
+                  const userName = userItem?.name as string | undefined;
+                  const userId = userItem?.itemId as number | undefined;
+                  const userIlvl = userItem?.ilvl as number | undefined;
+                  const userEnchant = userItem?.enchantId as number | undefined;
+                  const userGems = userItem?.gemIds as number[] | undefined;
+
+                  const topItem = g.topItems[0];
+                  const topName = topItem?.name || "—";
+                  const topPop = topItem?.popularity || 0;
+                  const topPopPct = Math.round(topPop * 100);
+                  const isMatch = userId && topItem && userId === topItem.itemId;
+
+                  // Find user item popularity if it exists in top items
+                  const userRank = g.topItems.findIndex((ti) => ti.itemId === userId);
+                  const userPop = userRank >= 0 ? g.topItems[userRank].popularity : 0;
+                  const userPopPct = Math.round(userPop * 100);
+
+                  return (
+                    <div key={g.slot} style={{
+                      background: "var(--card)",
+                      border: `1px solid ${isMatch ? "rgba(63, 185, 80, 0.3)" : "var(--border)"}`,
+                      borderRadius: "0.5rem",
+                      padding: "0.75rem 1rem",
+                      display: "grid",
+                      gridTemplateColumns: "7rem 1fr 2.5rem 1fr",
+                      gap: "0.75rem",
+                      alignItems: "center",
+                    }}>
+                      {/* Slot name */}
+                      <div style={{
+                        textTransform: "capitalize",
+                        fontWeight: 600,
+                        fontSize: "0.875rem",
+                        color: "var(--muted)",
+                      }}>
+                        {g.slot.replace(/_/g, " ")}
+                      </div>
+
+                      {/* User's item */}
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                        {userItem ? (
+                          <>
+                            <span style={{
+                              fontSize: "0.875rem",
+                              fontWeight: 500,
+                              color: isMatch ? "var(--success)" : "var(--foreground)",
+                            }}>
+                              {userName || `Item #${userId}`}
+                            </span>
+                            {userIlvl && (
                               <span style={{
-                                fontWeight: 600,
-                                color: ilvl >= 285 ? "var(--accent)" : ilvl >= 276 ? "var(--foreground)" : "var(--muted)",
+                                fontSize: "0.75rem",
+                                color: "var(--muted)",
+                                background: "var(--card-hover)",
+                                padding: "0.125rem 0.375rem",
+                                borderRadius: "0.25rem",
                               }}>
-                                {ilvl}
+                                {userIlvl}
                               </span>
-                            ) : (
-                              <span style={{ color: "var(--muted)" }}>—</span>
                             )}
-                          </td>
-                          <td style={{ padding: "0.75rem 1rem", fontSize: "0.875rem", textAlign: "center" }}>
-                            {enchantId ? (
-                              <span style={{ color: "var(--success)" }}>Si</span>
-                            ) : item ? (
-                              <span style={{ color: "var(--danger)" }}>No</span>
-                            ) : (
-                              <span style={{ color: "var(--muted)" }}>—</span>
+                            {userEnchant && (
+                              <span style={{ fontSize: "0.7rem", color: "var(--success)" }} title="Enchanted">E</span>
                             )}
-                          </td>
-                          <td style={{ padding: "0.75rem 1rem", fontSize: "0.875rem", textAlign: "center" }}>
-                            {gemIds && gemIds.length > 0 ? (
-                              <span style={{ color: "var(--accent)" }}>{gemIds.length}</span>
-                            ) : (
-                              <span style={{ color: "var(--muted)" }}>—</span>
+                            {userGems && userGems.length > 0 && (
+                              <span style={{ fontSize: "0.7rem", color: "var(--accent)" }} title={`${userGems.length} gem(s)`}>G</span>
                             )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                          </>
+                        ) : (
+                          <span style={{ fontSize: "0.875rem", color: "var(--muted)" }}>Vac&iacute;o</span>
+                        )}
+                      </div>
+
+                      {/* Arrow */}
+                      <div style={{ textAlign: "center", fontSize: "0.875rem", color: isMatch ? "var(--success)" : "var(--muted)" }}>
+                        {isMatch ? "=" : "→"}
+                      </div>
+
+                      {/* Top item + usage bar */}
+                      <div>
+                        {topItem ? (
+                          <div>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.25rem" }}>
+                              <span style={{
+                                fontSize: "0.875rem",
+                                fontWeight: 500,
+                                color: isMatch ? "var(--success)" : "var(--primary)",
+                              }}>
+                                {topName}
+                              </span>
+                              <span style={{
+                                fontSize: "0.75rem",
+                                fontWeight: 700,
+                                color: isMatch ? "var(--success)" : topPopPct >= 60 ? "var(--accent)" : "var(--muted)",
+                              }}>
+                                {topPopPct}%
+                              </span>
+                            </div>
+                            <div style={{
+                              height: "0.5rem",
+                              background: "rgba(48, 54, 61, 0.5)",
+                              borderRadius: "9999px",
+                              overflow: "hidden",
+                            }}>
+                              <div style={{
+                                width: `${topPopPct}%`,
+                                height: "100%",
+                                borderRadius: "9999px",
+                                background: isMatch ? "var(--success)" : topPopPct >= 60 ? "var(--primary)" : topPopPct >= 30 ? "var(--warning)" : "var(--muted)",
+                                transition: "width 0.5s ease-out",
+                              }} />
+                            </div>
+                            {userItem && !isMatch && userRank >= 0 && (
+                              <div style={{ fontSize: "0.7rem", color: "var(--muted)", marginTop: "0.125rem" }}>
+                                Tu item: {userPopPct}% de popularidad (#{userRank + 1})
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <span style={{ fontSize: "0.875rem", color: "var(--muted)" }}>Sin datos</span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
