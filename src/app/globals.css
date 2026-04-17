@@ -1,13 +1,6 @@
 /* ==============================================
    WoWSimc - Global Styles
-   ==============================================
-   When running locally with Tailwind installed:
-   - Uncomment the @import "tailwindcss" line below
-   - Uncomment "@tailwindcss/postcss" in postcss.config.mjs
-   - Remove the manual CSS classes below the "FALLBACK" comment
    ============================================== */
-
-/* @import "tailwindcss"; -- UNCOMMENT THIS WHEN TAILWIND IS INSTALLED */
 
 :root {
   --background: #0d1117;
@@ -24,11 +17,6 @@
   --muted: #8b949e;
 }
 
-/* ==============================================
-   FALLBACK CSS - Used when Tailwind is not available
-   Remove everything below when activating Tailwind
-   ============================================== */
-
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
 body {
@@ -41,20 +29,46 @@ body {
 a { color: var(--primary); text-decoration: none; }
 a:hover { color: var(--primary-hover); }
 
-/* Layout utilities */
-.max-w-7xl { max-width: 80rem; margin: 0 auto; padding: 0 1rem; }
+/* ========== Layout ========== */
+.max-w-7xl { max-width: 80rem; margin-left: auto; margin-right: auto; }
+.max-w-2xl { max-width: 42rem; margin-left: auto; margin-right: auto; }
+.mx-auto { margin-left: auto; margin-right: auto; }
 .flex { display: flex; }
 .flex-col { flex-direction: column; }
+.flex-wrap { flex-wrap: wrap; }
+.flex-1 { flex: 1; }
 .items-center { align-items: center; }
+.items-start { align-items: flex-start; }
 .justify-between { justify-content: space-between; }
 .justify-center { justify-content: center; }
+.justify-end { justify-content: flex-end; }
+.text-center { text-align: center; }
+.text-right { text-align: right; }
+.inline-block { display: inline-block; }
+.grid { display: grid; }
+
+/* ========== Sizing ========== */
+.w-full { width: 100%; }
+.w-12 { width: 3rem; }
+.w-16 { width: 4rem; }
+.h-8 { height: 2rem; }
+.h-12 { height: 3rem; }
+.h-16 { height: 4rem; }
+.h-48 { height: 12rem; }
+.min-h-full { min-height: 100%; }
+
+/* ========== Positioning ========== */
+.relative { position: relative; }
+.absolute { position: absolute; }
+.overflow-hidden { overflow: hidden; }
+.overflow-x-auto { overflow-x: auto; }
+
+/* ========== Spacing ========== */
 .gap-2 { gap: 0.5rem; }
 .gap-3 { gap: 0.75rem; }
 .gap-4 { gap: 1rem; }
 .gap-6 { gap: 1.5rem; }
 .gap-8 { gap: 2rem; }
-.text-center { text-align: center; }
-.text-right { text-align: right; }
 .ml-auto { margin-left: auto; }
 .mb-1 { margin-bottom: 0.25rem; }
 .mb-2 { margin-bottom: 0.5rem; }
@@ -71,6 +85,7 @@ a:hover { color: var(--primary-hover); }
 .p-6 { padding: 1.5rem; }
 .p-8 { padding: 2rem; }
 .px-2 { padding-left: 0.5rem; padding-right: 0.5rem; }
+.px-3 { padding-left: 0.75rem; padding-right: 0.75rem; }
 .px-4 { padding-left: 1rem; padding-right: 1rem; }
 .px-6 { padding-left: 1.5rem; padding-right: 1.5rem; }
 .px-8 { padding-left: 2rem; padding-right: 2rem; }
@@ -78,15 +93,22 @@ a:hover { color: var(--primary-hover); }
 .py-3 { padding-top: 0.75rem; padding-bottom: 0.75rem; }
 .py-4 { padding-top: 1rem; padding-bottom: 1rem; }
 .py-8 { padding-top: 2rem; padding-bottom: 2rem; }
-.w-full { width: 100%; }
-.w-12 { width: 3rem; }
-.w-16 { width: 4rem; }
-.h-12 { height: 3rem; }
-.h-16 { height: 4rem; }
-.h-48 { height: 12rem; }
+.space-y-2 > * + * { margin-top: 0.5rem; }
+.space-y-3 > * + * { margin-top: 0.75rem; }
+.space-y-4 > * + * { margin-top: 1rem; }
+
+/* ========== Borders ========== */
+.border { border: 1px solid var(--border); }
+.border-b { border-bottom: 1px solid var(--border); }
+.border-t { border-top: 1px solid var(--border); }
+.border-b-2 { border-bottom: 2px solid; }
+.border-primary { border-color: var(--primary); }
+.border-transparent { border-color: transparent; }
 .rounded { border-radius: 0.25rem; }
 .rounded-lg { border-radius: 0.5rem; }
 .rounded-full { border-radius: 9999px; }
+
+/* ========== Typography ========== */
 .font-medium { font-weight: 500; }
 .font-semibold { font-weight: 600; }
 .font-bold { font-weight: 700; }
@@ -98,26 +120,10 @@ a:hover { color: var(--primary-hover); }
 .text-2xl { font-size: 1.5rem; }
 .text-3xl { font-size: 1.875rem; }
 .text-4xl { font-size: 2.25rem; }
-.text-8xl { font-size: 6rem; }
 .leading-tight { line-height: 1.25; }
-.inline-block { display: inline-block; }
-.grid { display: grid; }
-.border-b { border-bottom: 1px solid var(--border); }
-.border-t { border-top: 1px solid var(--border); }
-.space-y-2 > * + * { margin-top: 0.5rem; }
-.space-y-4 > * + * { margin-top: 1rem; }
 .capitalize { text-transform: capitalize; }
-.transition-colors { transition: color 0.2s, background-color 0.2s; }
-.hover\:text-foreground:hover { color: var(--foreground); }
-.hover\:text-primary:hover { color: var(--primary); }
-.hover\:bg-card-hover:hover { background: var(--card-hover); }
-.hover\:bg-primary-hover:hover { background: var(--primary-hover); }
-.cursor-not-allowed { cursor: not-allowed; }
-.overflow-hidden { overflow: hidden; }
-.overflow-x-auto { overflow-x: auto; }
-.resize-vertical { resize: vertical; }
 
-/* Colors */
+/* ========== Colors ========== */
 .text-primary { color: var(--primary); }
 .text-muted { color: var(--muted); }
 .text-success { color: var(--success); }
@@ -126,6 +132,7 @@ a:hover { color: var(--primary-hover); }
 .text-accent { color: var(--accent); }
 .text-foreground { color: var(--foreground); }
 .text-background { color: var(--background); }
+.text-white { color: #fff; }
 .bg-background { background: var(--background); }
 .bg-card { background: var(--card); }
 .bg-card-hover { background: var(--card-hover); }
@@ -135,43 +142,29 @@ a:hover { color: var(--primary-hover); }
 .bg-warning { background: var(--warning); }
 .bg-success { background: var(--success); }
 .bg-muted { background: var(--muted); }
-.border { border: 1px solid var(--border); }
 .opacity-50 { opacity: 0.5; }
 
-/* Grid responsive */
+/* ========== Interactions ========== */
+.transition-colors { transition: color 0.2s, background-color 0.2s; }
+.hover\:text-foreground:hover { color: var(--foreground); }
+.hover\:text-primary:hover { color: var(--primary); }
+.hover\:bg-card-hover:hover { background: var(--card-hover); }
+.hover\:bg-primary-hover:hover { background: var(--primary-hover); }
+.cursor-not-allowed { cursor: not-allowed; }
+.resize-vertical { resize: vertical; }
+.truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.select-none { user-select: none; }
+
+/* ========== Grid responsive ========== */
 @media (min-width: 640px) { .sm\:grid-cols-3 { grid-template-columns: repeat(3, 1fr); } }
 @media (min-width: 768px) { .md\:grid-cols-2 { grid-template-columns: repeat(2, 1fr); } .md\:grid-cols-3 { grid-template-columns: repeat(3, 1fr); } .md\:grid-cols-4 { grid-template-columns: repeat(4, 1fr); } }
 @media (min-width: 1024px) { .lg\:grid-cols-5 { grid-template-columns: repeat(5, 1fr); } }
 @media (max-width: 767px) { .grid { grid-template-columns: repeat(2, 1fr); } }
 
-/* Buttons */
+/* ========== Buttons ========== */
 button { font-family: inherit; }
-.btn-primary {
-  background: var(--primary); color: white; font-weight: 600;
-  padding: 0.75rem 2rem; border-radius: 0.5rem; border: none;
-  cursor: pointer; font-size: 0.875rem; transition: background 0.2s;
-}
-.btn-primary:hover { background: var(--primary-hover); }
-.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
-.btn-secondary {
-  background: var(--card); border: 1px solid var(--border); color: var(--muted);
-  padding: 0.5rem 1rem; border-radius: 0.5rem; cursor: pointer;
-  font-size: 0.875rem; font-weight: 500; transition: color 0.2s;
-}
-.btn-secondary:hover { color: var(--foreground); }
 
-/* Tab buttons */
-button[class*="bg-primary"] { color: white; }
-button[class*="bg-card"] { background: var(--card); }
-
-/* Misc utilities used in compare */
-.mx-auto { margin-left: auto; margin-right: auto; }
-.border-l-2 { border-left: 2px solid; }
-.border-r-2 { border-right: 2px solid; }
-.truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.select-none { user-select: none; }
-
-/* Form elements */
+/* ========== Forms ========== */
 textarea {
   width: 100%; height: 12rem; background: var(--background);
   border: 1px solid var(--border); border-radius: 0.5rem;
@@ -181,28 +174,34 @@ textarea {
 textarea:focus { outline: none; border-color: var(--primary); }
 textarea::placeholder { color: var(--muted); opacity: 0.5; }
 
-/* Tables */
+/* ========== Tables ========== */
 table { width: 100%; border-collapse: collapse; }
 th { text-align: left; font-size: 0.75rem; color: var(--muted); font-weight: 500; padding: 0.75rem 1rem; }
 td { padding: 0.75rem 1rem; font-size: 0.875rem; border-bottom: 1px solid rgba(48, 54, 61, 0.5); }
 tr:hover td { background: var(--card-hover); }
 
-/* Stat bars */
-.stat-bar { position: relative; height: 2rem; background: rgba(48, 54, 61, 0.3); border-radius: 0.5rem; overflow: hidden; }
-.stat-bar-fill { position: absolute; top: 0; bottom: 0; left: 0; border-radius: 0.5rem; display: flex; align-items: center; justify-content: flex-end; padding-right: 0.5rem; transition: width 0.6s ease-out; }
-
-/* WoW quality colors */
+/* ========== WoW quality colors ========== */
 .quality-epic { color: #a335ee; }
+.quality-rare { color: #0070dd; }
+.quality-uncommon { color: #1eff00; }
 
-/* Scrollbar */
+/* ========== Scrollbar ========== */
 ::-webkit-scrollbar { width: 8px; }
 ::-webkit-scrollbar-track { background: var(--background); }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
 
-/* Min height */
-.min-h-full { min-height: 100%; }
-.flex-1 { flex: 1; }
+/* ========== Class cards ========== */
+.class-card { transition: background 0.2s; }
+.class-card:hover { background: var(--card-hover) !important; }
 
-/* Code */
+/* ========== Responsive grid ========== */
+@media (max-width: 1023px) {
+  .class-grid { grid-template-columns: repeat(3, 1fr) !important; }
+}
+@media (max-width: 639px) {
+  .class-grid { grid-template-columns: repeat(2, 1fr) !important; }
+}
+
+/* ========== Code ========== */
 code { font-family: monospace; }

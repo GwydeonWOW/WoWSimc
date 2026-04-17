@@ -28,27 +28,27 @@ export default function RootLayout({
       lang="es"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col bg-background text-foreground">
-        <header className="border-b border-border bg-card">
-          <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
-            <a href="/" className="flex items-center gap-2">
-              <span className="text-xl font-bold text-primary">WoW</span>
-              <span className="text-xl font-bold text-foreground">Simc</span>
+      <body style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: "var(--background)", color: "var(--foreground)" }}>
+        <header style={{ borderBottom: "1px solid var(--border)", background: "var(--card)" }}>
+          <div style={{ maxWidth: "80rem", margin: "0 auto", padding: "0.75rem 1rem", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <a href="/" style={{ display: "flex", alignItems: "center", gap: "0.5rem", textDecoration: "none" }}>
+              <span style={{ fontSize: "1.25rem", fontWeight: 700, color: "var(--primary)" }}>WoW</span>
+              <span style={{ fontSize: "1.25rem", fontWeight: 700, color: "var(--foreground)" }}>Simc</span>
             </a>
-            <nav className="flex items-center gap-6">
-              <a href="/compare" className="text-sm text-muted hover:text-foreground transition-colors">
+            <nav style={{ display: "flex", alignItems: "center", gap: "1.5rem" }}>
+              <a href="/compare" style={{ fontSize: "0.875rem", color: "var(--muted)", textDecoration: "none" }}>
                 Comparar
               </a>
-              <a href="/" className="text-sm text-muted hover:text-foreground transition-colors">
+              <a href="/" style={{ fontSize: "0.875rem", color: "var(--muted)", textDecoration: "none" }}>
                 Guias
               </a>
             </nav>
           </div>
         </header>
-        <main className="flex-1">
+        <main style={{ flex: 1 }}>
           {children}
         </main>
-        <footer className="border-t border-border bg-card py-4 text-center text-xs text-muted">
+        <footer style={{ borderTop: "1px solid var(--border)", background: "var(--card)", padding: "1rem 0", textAlign: "center", fontSize: "0.75rem", color: "var(--muted)" }}>
           WoWSimc - Character Analyzer. Datos de Blizzard Entertainment y Raider.IO.
         </footer>
       </body>

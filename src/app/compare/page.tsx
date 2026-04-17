@@ -28,7 +28,7 @@ export default function ComparePage() {
   const [errors, setErrors] = useState<string[]>([]);
   const [contentType, setContentType] = useState<ContentType>("mythic_plus");
   const [comparison, setComparison] = useState<ComparisonResult | null>(null);
-  const [activeTab, setActiveTab] = useState<"summary" | "stats" | "gear">("gear");
+  const [activeTab, setActiveTab] = useState<"stats" | "gear" | "tips">("stats");
   const [loading, setLoading] = useState(false);
   const [apiStatus, setApiStatus] = useState<string>("");
 
@@ -105,7 +105,6 @@ export default function ComparePage() {
       const data = await res.json();
 
       if (data.success && data.aggregate) {
-        // Use the server-side comparison engine via API
         const compRes = await fetch("/api/compare", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -120,8 +119,8 @@ export default function ComparePage() {
         }
       }
 
-      // No aggregate data — try on-demand sync for this spec
-      setApiStatus("No hay datos de top players. Sincronizando...");
+      // No aggregate data — try on-demand sync
+      setApiStatus("No hay datos de top players. Sincronizando desde Raider.IO...");
       try {
         const syncRes = await fetch("/api/sync", {
           method: "POST",
@@ -135,7 +134,6 @@ export default function ComparePage() {
         const syncData = await syncRes.json();
 
         if (syncData.success && syncData.synced > 0) {
-          // Re-fetch aggregate after sync
           const aggRes2 = await fetch(
             `/api/compare/aggregate?classSlug=${char.class}&specSlug=${char.spec}&contentType=${ct}&season=${CURRENT_SEASON}`
           );
@@ -160,7 +158,6 @@ export default function ComparePage() {
         // Sync failed, fall through
       }
 
-      // No data available - show error
       setApiStatus(`No se pudieron obtener datos de top players para ${char.class} ${char.spec}. Verifica la conexion a la base de datos y que las APIs esten configuradas.`);
       setComparison(null);
     } catch (e) {
@@ -169,40 +166,67 @@ export default function ComparePage() {
     }
   }
 
+  // Sort stats by topAvg descending (highest priority first)
+  const sortedStats = comparison
+    ? [...comparison.stats].sort((a, b) => b.topAvg - a.topAvg)
+    : [];
+
   return (
-    <div className="max-w-7xl mx-auto px-4 py-8">
-      <h1 className="text-2xl font-bold mb-6">
-        Comparar <span className="text-primary">Personaje</span>
+    <div style={{ maxWidth: "80rem", margin: "0 auto", padding: "0 1rem", paddingTop: "2rem", paddingBottom: "2rem" }}>
+      <h1 style={{ fontSize: "1.5rem", fontWeight: 700, marginBottom: "1.5rem" }}>
+        Comparar <span style={{ color: "var(--primary)" }}>Personaje</span>
       </h1>
 
       {/* Input Section */}
-      <div className="bg-card border border-border rounded-lg p-6 mb-6">
-        <label className="block text-sm font-medium text-muted mb-2">
+      <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: "0.5rem", padding: "1.5rem", marginBottom: "1.5rem" }}>
+        <label style={{ display: "block", fontSize: "0.875rem", fontWeight: 500, color: "var(--muted)", marginBottom: "0.5rem" }}>
           Pega el string del addon SimulationCraft (/simc)
         </label>
         <textarea
           value={simcInput}
           onChange={(e) => setSimcInput(e.target.value)}
           placeholder={`mage="TuPersonaje"\nlevel=80\nrace=undead\nregion=eu\nserver=realm-name\nspec=frost\n...`}
-          className="w-full h-48 bg-background border border-border rounded-lg p-4 text-sm font-mono text-foreground placeholder-muted/50 focus:outline-none focus:border-primary resize-vertical"
+          style={{ height: "10rem" }}
         />
-        <div className="flex items-center gap-4 mt-4">
+        <div style={{ display: "flex", alignItems: "center", gap: "1rem", marginTop: "1rem" }}>
           <button
             onClick={handleParse}
             disabled={loading || !simcInput.trim()}
-            className="bg-primary hover:bg-primary-hover disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold px-6 py-2 rounded-lg transition-colors"
+            style={{
+              background: "var(--primary)",
+              color: "white",
+              fontWeight: 600,
+              padding: "0.5rem 1.5rem",
+              borderRadius: "0.5rem",
+              border: "none",
+              cursor: loading || !simcInput.trim() ? "not-allowed" : "pointer",
+              opacity: loading || !simcInput.trim() ? 0.5 : 1,
+              fontSize: "0.875rem",
+            }}
           >
             {loading ? "Analizando..." : "Analizar personaje"}
           </button>
           {errors.length > 0 && (
-            <div className="text-danger text-sm">{errors.map((e, i) => <p key={i}>{e}</p>)}</div>
+            <div style={{ color: "var(--danger)", fontSize: "0.875rem" }}>
+              {errors.map((e, i) => <p key={i}>{e}</p>)}
+            </div>
           )}
           {warnings.length > 0 && (
-            <div className="text-warning text-xs">{warnings.length} aviso{warnings.length !== 1 ? "s" : ""}</div>
+            <div style={{ color: "var(--warning)", fontSize: "0.75rem" }}>
+              {warnings.length} aviso{warnings.length !== 1 ? "s" : ""}
+            </div>
           )}
         </div>
         {apiStatus && (
-          <div className={`mt-3 text-sm ${apiStatus.includes("Error") || apiStatus.includes("error") ? "text-danger" : apiStatus.includes("no disponible") || apiStatus.includes("estimada") ? "text-warning" : "text-muted"}`}>
+          <div style={{
+            marginTop: "0.75rem",
+            fontSize: "0.875rem",
+            color: apiStatus.toLowerCase().includes("error") || apiStatus.toLowerCase().includes("no se pudieron")
+              ? "var(--danger)"
+              : apiStatus.toLowerCase().includes("no disponible") || apiStatus.toLowerCase().includes("warning")
+                ? "var(--warning)"
+                : "var(--muted)",
+          }}>
             {apiStatus}
           </div>
         )}
@@ -211,167 +235,435 @@ export default function ComparePage() {
       {/* Results */}
       {character && comparison && (
         <div>
-          {/* Character Summary */}
-          <div className="bg-card border border-border rounded-lg p-4 mb-6 flex items-center gap-6">
-            <div className="w-16 h-16 bg-primary/20 rounded-lg flex items-center justify-center text-2xl font-bold text-primary">
+          {/* Character Summary Bar */}
+          <div style={{
+            background: "var(--card)",
+            border: "1px solid var(--border)",
+            borderRadius: "0.5rem",
+            padding: "1rem 1.5rem",
+            marginBottom: "1rem",
+            display: "flex",
+            alignItems: "center",
+            gap: "1rem",
+          }}>
+            <div style={{
+              width: "3rem",
+              height: "3rem",
+              background: "rgba(196, 30, 58, 0.15)",
+              borderRadius: "0.5rem",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: "1.25rem",
+              fontWeight: 700,
+              color: "var(--primary)",
+              flexShrink: 0,
+            }}>
               {character.name.charAt(0)}
             </div>
-            <div>
-              <h2 className="text-lg font-semibold">{character.name}</h2>
-              <p className="text-sm text-muted">
-                {String(character.class)} {character.spec} - {character.race} - {character.server} ({String(character.region).toUpperCase()})
-              </p>
-              <p className="text-xs text-muted mt-1">{gearCount(character)} items equipados | Nivel {character.level}</p>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: "1.125rem", fontWeight: 600 }}>{character.name}</div>
+              <div style={{ fontSize: "0.875rem", color: "var(--muted)" }}>
+                {String(character.class)} {character.spec} &middot; {character.race} &middot; {character.server} ({String(character.region).toUpperCase()})
+              </div>
+              <div style={{ fontSize: "0.75rem", color: "var(--muted)", marginTop: "0.125rem" }}>
+                {gearCount(character)} items equipados &middot; Nivel {character.level}
+              </div>
             </div>
-            <div className="ml-auto text-right">
-              <div className="text-sm text-muted">Score Global</div>
-              <div className={`text-3xl font-bold ${comparison.scores.overall >= 70 ? "text-success" : comparison.scores.overall >= 40 ? "text-warning" : "text-danger"}`}>
+            <div style={{ textAlign: "right" }}>
+              <div style={{ fontSize: "0.75rem", color: "var(--muted)" }}>Score Global</div>
+              <div style={{
+                fontSize: "1.875rem",
+                fontWeight: 700,
+                color: comparison.scores.overall >= 70 ? "var(--success)" : comparison.scores.overall >= 40 ? "var(--warning)" : "var(--danger)",
+              }}>
                 {comparison.scores.overall}
               </div>
             </div>
           </div>
 
           {/* Content Type Toggle */}
-          <div className="flex gap-2 mb-4">
-            <button onClick={() => { setContentType("mythic_plus"); if (character) fetchAndCompare(character, "mythic_plus"); }}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${contentType === "mythic_plus" ? "bg-primary text-white" : "bg-card border border-border text-muted hover:text-foreground"}`}>
+          <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem" }}>
+            <button
+              onClick={() => { setContentType("mythic_plus"); if (character) fetchAndCompare(character, "mythic_plus"); }}
+              style={{
+                padding: "0.5rem 1rem",
+                borderRadius: "0.5rem",
+                fontSize: "0.875rem",
+                fontWeight: 500,
+                border: "none",
+                cursor: "pointer",
+                background: contentType === "mythic_plus" ? "var(--primary)" : "var(--card)",
+                color: contentType === "mythic_plus" ? "white" : "var(--muted)",
+                outline: "none",
+              }}
+            >
               Mythic+
             </button>
-            <button onClick={() => { setContentType("raid"); if (character) fetchAndCompare(character, "raid"); }}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${contentType === "raid" ? "bg-primary text-white" : "bg-card border border-border text-muted hover:text-foreground"}`}>
+            <button
+              onClick={() => { setContentType("raid"); if (character) fetchAndCompare(character, "raid"); }}
+              style={{
+                padding: "0.5rem 1rem",
+                borderRadius: "0.5rem",
+                fontSize: "0.875rem",
+                fontWeight: 500,
+                border: "none",
+                cursor: "pointer",
+                background: contentType === "raid" ? "var(--primary)" : "var(--card)",
+                color: contentType === "raid" ? "white" : "var(--muted)",
+                outline: "none",
+              }}
+            >
               Raid
             </button>
           </div>
 
           {/* Tabs */}
-          <div className="flex gap-1 border-b border-border mb-6">
-            {(["summary", "stats", "gear"] as const).map((tab) => (
-              <button key={tab} onClick={() => setActiveTab(tab)}
-                className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px ${activeTab === tab ? "border-primary text-primary" : "border-transparent text-muted hover:text-foreground"}`}>
-                {tab === "summary" ? "Resumen" : tab === "stats" ? "Stats" : "Gear"}
+          <div style={{ display: "flex", gap: "0.25rem", borderBottom: "2px solid var(--border)", marginBottom: "1.5rem" }}>
+            {(["stats", "gear", "tips"] as const).map((tab) => (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                style={{
+                  padding: "0.5rem 1rem",
+                  fontSize: "0.875rem",
+                  fontWeight: 500,
+                  border: "none",
+                  borderBottom: activeTab === tab ? "2px solid var(--primary)" : "2px solid transparent",
+                  background: "none",
+                  color: activeTab === tab ? "var(--primary)" : "var(--muted)",
+                  cursor: "pointer",
+                  marginBottom: "-2px",
+                  outline: "none",
+                }}
+              >
+                {tab === "stats" ? "Stats" : tab === "gear" ? "Gear" : "Recomendaciones"}
               </button>
             ))}
           </div>
 
-          {/* Summary Tab */}
-          {activeTab === "summary" && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {/* ===== Stats Tab ===== */}
+          {activeTab === "stats" && (
+            <div>
+              {!hasStats(character) && (
+                <div style={{
+                  background: "rgba(210, 153, 34, 0.1)",
+                  border: "1px solid rgba(210, 153, 34, 0.3)",
+                  borderRadius: "0.5rem",
+                  padding: "1rem",
+                  marginBottom: "1rem",
+                }}>
+                  <p style={{ fontSize: "0.875rem", color: "var(--warning)" }}>
+                    No se pudieron obtener tus stats de Blizzard API. Los valores mostrados son 0.
+                  </p>
+                </div>
+              )}
+
+              <div style={{
+                background: "var(--card)",
+                border: "1px solid var(--border)",
+                borderRadius: "0.5rem",
+                padding: "1.5rem",
+              }}>
+                <h3 style={{ fontWeight: 600, marginBottom: "0.5rem" }}>Stat Priority</h3>
+                <p style={{ fontSize: "0.75rem", color: "var(--muted)", marginBottom: "1rem" }}>
+                  Ordenado por rating promedio de top players. Barras muestran tu valor vs promedio.
+                </p>
+
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                  {sortedStats.map((stat, index) => {
+                    const barPercent = stat.topAvg > 0
+                      ? Math.min((stat.userValue / stat.topAvg) * 100, 110)
+                      : 0;
+                    const barColor = barPercent >= 95
+                      ? "var(--success)"
+                      : barPercent >= 70
+                        ? "var(--warning)"
+                        : "var(--danger)";
+                    const isPositive = stat.diff >= 0;
+
+                    return (
+                      <div key={stat.stat} style={{
+                        background: "var(--card-hover)",
+                        border: "1px solid var(--border)",
+                        borderRadius: "0.5rem",
+                        padding: "1rem",
+                      }}>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.5rem" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                            <span style={{
+                              background: "var(--primary)",
+                              color: "white",
+                              width: "1.5rem",
+                              height: "1.5rem",
+                              borderRadius: "0.25rem",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              fontSize: "0.75rem",
+                              fontWeight: 700,
+                              flexShrink: 0,
+                            }}>
+                              {index + 1}
+                            </span>
+                            <span style={{ fontWeight: 500 }}>{stat.stat}</span>
+                          </div>
+                          <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+                            <span style={{ fontSize: "0.875rem", color: "var(--muted)" }}>
+                              Top avg: {stat.topAvg.toLocaleString()}
+                            </span>
+                            {stat.userValue > 0 ? (
+                              <span style={{
+                                fontSize: "0.875rem",
+                                fontWeight: 600,
+                                color: isPositive ? "var(--success)" : "var(--danger)",
+                              }}>
+                                {isPositive ? "+" : ""}{stat.diff.toLocaleString()} ({isPositive ? "+" : ""}{stat.diffPercent.toFixed(1)}%)
+                              </span>
+                            ) : (
+                              <span style={{ fontSize: "0.875rem", color: "var(--muted)" }}>Sin datos</span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Stat bar */}
+                        <div style={{
+                          background: "rgba(48, 54, 61, 0.5)",
+                          borderRadius: "0.5rem",
+                          height: "1.75rem",
+                          overflow: "hidden",
+                          position: "relative",
+                        }}>
+                          {stat.userValue > 0 && (
+                            <div style={{
+                              width: `${Math.min(barPercent, 100)}%`,
+                              height: "100%",
+                              background: barColor,
+                              borderRadius: "0.5rem",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "flex-end",
+                              paddingRight: "0.5rem",
+                              transition: "width 0.6s ease-out",
+                            }}>
+                              <span style={{
+                                fontSize: "0.75rem",
+                                fontWeight: 700,
+                                color: "var(--background)",
+                              }}>
+                                {stat.userValue.toLocaleString()}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* User vs Top comparison */}
+                        <div style={{ display: "flex", justifyContent: "space-between", marginTop: "0.25rem" }}>
+                          <span style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
+                            Tu: {stat.userValue > 0 ? stat.userValue.toLocaleString() : "—"}
+                          </span>
+                          <span style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
+                            Top avg: {stat.topAvg.toLocaleString()}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ===== Gear Tab ===== */}
+          {activeTab === "gear" && (
+            <div>
+              {/* Score cards */}
+              <div style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(4, 1fr)",
+                gap: "0.75rem",
+                marginBottom: "1rem",
+              }}>
                 {[
                   { label: "Stats", score: comparison.scores.stats },
                   { label: "Gear", score: comparison.scores.gear },
                   { label: "Talentos", score: comparison.scores.talents },
                   { label: "Encantos", score: comparison.scores.enchants },
                 ].map(({ label, score }) => (
-                  <div key={label} className="bg-card border border-border rounded-lg p-4">
-                    <div className="text-xs text-muted mb-1">{label}</div>
-                    <div className={`text-2xl font-bold ${score >= 70 ? "text-success" : score >= 40 ? "text-warning" : "text-danger"}`}>{score}</div>
-                    <div className="w-full bg-border rounded-full h-1.5 mt-2">
-                      <div className={`h-1.5 rounded-full stat-bar-fill ${score >= 70 ? "bg-success" : score >= 40 ? "bg-warning" : "bg-danger"}`} style={{ width: `${score}%` }} />
+                  <div key={label} style={{
+                    background: "var(--card)",
+                    border: "1px solid var(--border)",
+                    borderRadius: "0.5rem",
+                    padding: "0.75rem",
+                    textAlign: "center",
+                  }}>
+                    <div style={{ fontSize: "0.75rem", color: "var(--muted)", marginBottom: "0.25rem" }}>{label}</div>
+                    <div style={{
+                      fontSize: "1.5rem",
+                      fontWeight: 700,
+                      color: score >= 70 ? "var(--success)" : score >= 40 ? "var(--warning)" : "var(--danger)",
+                    }}>
+                      {score}
+                    </div>
+                    <div style={{
+                      height: "0.375rem",
+                      background: "var(--border)",
+                      borderRadius: "9999px",
+                      marginTop: "0.375rem",
+                      overflow: "hidden",
+                    }}>
+                      <div style={{
+                        width: `${score}%`,
+                        height: "100%",
+                        borderRadius: "9999px",
+                        background: score >= 70 ? "var(--success)" : score >= 40 ? "var(--warning)" : "var(--danger)",
+                      }} />
                     </div>
                   </div>
                 ))}
               </div>
-              {comparison.recommendations.length > 0 && (
-                <div className="bg-card border border-border rounded-lg p-4">
-                  <h3 className="font-semibold mb-3">Recomendaciones</h3>
-                  <div className="space-y-2">
-                    {comparison.recommendations.slice(0, 8).map((rec, i) => (
-                      <div key={i} className={`flex items-start gap-3 p-3 rounded-lg border ${rec.severity === "high" ? "border-danger/30 bg-danger/5" : rec.severity === "medium" ? "border-warning/30 bg-warning/5" : "border-border"}`}>
-                        <span className={`text-xs font-semibold px-2 py-0.5 rounded ${rec.severity === "high" ? "bg-danger/20 text-danger" : rec.severity === "medium" ? "bg-warning/20 text-warning" : "bg-muted/20 text-muted"}`}>
-                          {rec.severity === "high" ? "ALTO" : rec.severity === "medium" ? "MED" : "BAJO"}
-                        </span>
-                        <p className="text-sm">{rec.message}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+
+              {/* Gear table */}
+              <div style={{
+                background: "var(--card)",
+                border: "1px solid var(--border)",
+                borderRadius: "0.5rem",
+                overflow: "hidden",
+              }}>
+                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                  <thead>
+                    <tr style={{ borderBottom: "1px solid var(--border)" }}>
+                      <th style={{ textAlign: "left", fontSize: "0.75rem", color: "var(--muted)", fontWeight: 500, padding: "0.75rem 1rem" }}>Slot</th>
+                      <th style={{ textAlign: "left", fontSize: "0.75rem", color: "var(--muted)", fontWeight: 500, padding: "0.75rem 1rem" }}>Tu Item</th>
+                      <th style={{ textAlign: "right", fontSize: "0.75rem", color: "var(--muted)", fontWeight: 500, padding: "0.75rem 1rem" }}>ilvl</th>
+                      <th style={{ textAlign: "center", fontSize: "0.75rem", color: "var(--muted)", fontWeight: 500, padding: "0.75rem 1rem" }}>Enc</th>
+                      <th style={{ textAlign: "center", fontSize: "0.75rem", color: "var(--muted)", fontWeight: 500, padding: "0.75rem 1rem" }}>Gema</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {comparison.gear.map((g) => {
+                      const item = g.userItem as Record<string, unknown> | null;
+                      const itemName = item?.name as string | undefined;
+                      const itemId = item?.itemId as number | undefined;
+                      const ilvl = item?.ilvl as number | undefined;
+                      const enchantId = item?.enchantId as number | undefined;
+                      const gemIds = item?.gemIds as number[] | undefined;
+                      return (
+                        <tr key={g.slot} style={{ borderBottom: "1px solid rgba(48, 54, 61, 0.5)" }}>
+                          <td style={{ padding: "0.75rem 1rem", fontSize: "0.875rem", fontWeight: 500, textTransform: "capitalize" }}>
+                            {g.slot.replace(/_/g, " ")}
+                          </td>
+                          <td style={{ padding: "0.75rem 1rem", fontSize: "0.875rem" }}>
+                            {item ? (
+                              <span className="quality-epic">{itemName || `Item #${itemId}`}</span>
+                            ) : (
+                              <span style={{ color: "var(--muted)" }}>—</span>
+                            )}
+                          </td>
+                          <td style={{ padding: "0.75rem 1rem", fontSize: "0.875rem", textAlign: "right" }}>
+                            {ilvl ? (
+                              <span style={{
+                                fontWeight: 600,
+                                color: ilvl >= 285 ? "var(--accent)" : ilvl >= 276 ? "var(--foreground)" : "var(--muted)",
+                              }}>
+                                {ilvl}
+                              </span>
+                            ) : (
+                              <span style={{ color: "var(--muted)" }}>—</span>
+                            )}
+                          </td>
+                          <td style={{ padding: "0.75rem 1rem", fontSize: "0.875rem", textAlign: "center" }}>
+                            {enchantId ? (
+                              <span style={{ color: "var(--success)" }}>Si</span>
+                            ) : item ? (
+                              <span style={{ color: "var(--danger)" }}>No</span>
+                            ) : (
+                              <span style={{ color: "var(--muted)" }}>—</span>
+                            )}
+                          </td>
+                          <td style={{ padding: "0.75rem 1rem", fontSize: "0.875rem", textAlign: "center" }}>
+                            {gemIds && gemIds.length > 0 ? (
+                              <span style={{ color: "var(--accent)" }}>{gemIds.length}</span>
+                            ) : (
+                              <span style={{ color: "var(--muted)" }}>—</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
 
-          {/* Stats Tab */}
-          {activeTab === "stats" && (
-            <div className="space-y-4">
-              {!hasStats(character) && (
-                <div className="bg-warning/10 border border-warning/30 rounded-lg p-4 mb-4">
-                  <p className="text-sm text-warning">No se pudieron obtener tus stats de Blizzard API.</p>
+          {/* ===== Tips/Recommendations Tab ===== */}
+          {activeTab === "tips" && (
+            <div>
+              {comparison.recommendations.length > 0 ? (
+                <div style={{
+                  background: "var(--card)",
+                  border: "1px solid var(--border)",
+                  borderRadius: "0.5rem",
+                  padding: "1.5rem",
+                }}>
+                  <h3 style={{ fontWeight: 600, marginBottom: "1rem" }}>Recomendaciones</h3>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                    {comparison.recommendations.slice(0, 10).map((rec, i) => {
+                      const severity = rec.severity;
+                      const severityColor = severity === "high" ? "var(--danger)" : severity === "medium" ? "var(--warning)" : "var(--muted)";
+                      const severityBg = severity === "high" ? "rgba(248,81,73,0.05)" : severity === "medium" ? "rgba(210,153,34,0.05)" : "rgba(139,148,158,0.05)";
+                      const severityBorder = severity === "high" ? "rgba(248,81,73,0.3)" : severity === "medium" ? "rgba(210,153,34,0.3)" : "var(--border)";
+                      const severityLabel = severity === "high" ? "ALTO" : severity === "medium" ? "MED" : "BAJO";
+
+                      return (
+                        <div key={i} style={{
+                          display: "flex",
+                          alignItems: "flex-start",
+                          gap: "0.75rem",
+                          padding: "0.75rem",
+                          borderRadius: "0.5rem",
+                          border: `1px solid ${severityBorder}`,
+                          background: severityBg,
+                        }}>
+                          <span style={{
+                            fontSize: "0.75rem",
+                            fontWeight: 600,
+                            padding: "0.125rem 0.5rem",
+                            borderRadius: "0.25rem",
+                            background: severity === "high" ? "rgba(248,81,73,0.2)" : severity === "medium" ? "rgba(210,153,34,0.2)" : "rgba(139,148,158,0.2)",
+                            color: severityColor,
+                            flexShrink: 0,
+                          }}>
+                            {severityLabel}
+                          </span>
+                          <div style={{ flex: 1 }}>
+                            <p style={{ fontSize: "0.875rem" }}>{rec.message}</p>
+                            {rec.currentValue && rec.recommendedValue && (
+                              <p style={{ fontSize: "0.75rem", color: "var(--muted)", marginTop: "0.25rem" }}>
+                                Actual: {rec.currentValue} → Recomendado: {rec.recommendedValue}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <div style={{
+                  background: "var(--card)",
+                  border: "1px solid var(--border)",
+                  borderRadius: "0.5rem",
+                  padding: "2rem",
+                  textAlign: "center",
+                }}>
+                  <p style={{ color: "var(--success)", fontWeight: 500 }}>No hay recomendaciones pendientes.</p>
+                  <p style={{ fontSize: "0.875rem", color: "var(--muted)", marginTop: "0.5rem" }}>
+                    Tu personaje esta bien optimizado segun los datos de top players.
+                  </p>
                 </div>
               )}
-              {comparison.stats.map((stat) => (
-                <div key={stat.stat} className="bg-card border border-border rounded-lg p-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="font-medium">{stat.stat}</div>
-                    <div className="flex items-center gap-3">
-                      <span className="text-sm text-muted">Top avg: {stat.topAvg.toLocaleString()}</span>
-                      {stat.userValue > 0 ? (
-                        <span className={`text-sm font-semibold ${stat.diff >= 0 ? "text-success" : "text-danger"}`}>
-                          {stat.diff >= 0 ? "+" : ""}{stat.diff.toLocaleString()} ({stat.diffPercent >= 0 ? "+" : ""}{stat.diffPercent}%)
-                        </span>
-                      ) : <span className="text-sm text-muted">--</span>}
-                    </div>
-                  </div>
-                  <div className="relative h-8 bg-border/30 rounded-lg overflow-hidden">
-                    <div className="absolute inset-y-0 left-0 bg-muted/10 rounded-lg" style={{ width: "100%" }} />
-                    {stat.userValue > 0 && (
-                      <div className="absolute inset-y-0 left-0 stat-bar-fill rounded-lg flex items-center justify-end pr-2"
-                        style={{ width: `${Math.min((stat.userValue / Math.max(stat.topP100, 1)) * 100, 100)}%`, backgroundColor: stat.percentile >= 70 ? "var(--success)" : stat.percentile >= 40 ? "var(--warning)" : "var(--danger)" }}>
-                        <span className="text-xs font-bold text-background">{stat.userValue.toLocaleString()}</span>
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex justify-between text-xs text-muted mt-1">
-                    <span>P25: {stat.topP25.toLocaleString()}</span>
-                    <span>P50: {stat.topP50.toLocaleString()}</span>
-                    <span>P75: {stat.topP75.toLocaleString()}</span>
-                    <span>P100: {stat.topP100.toLocaleString()}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Gear Tab */}
-          {activeTab === "gear" && (
-            <div className="bg-card border border-border rounded-lg overflow-hidden">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-border">
-                    <th className="text-left text-xs text-muted font-medium px-4 py-3">Slot</th>
-                    <th className="text-left text-xs text-muted font-medium px-4 py-3">Tu Item</th>
-                    <th className="text-right text-xs text-muted font-medium px-4 py-3">ilvl</th>
-                    <th className="text-center text-xs text-muted font-medium px-4 py-3">Enc</th>
-                    <th className="text-center text-xs text-muted font-medium px-4 py-3">Gema</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {comparison.gear.map((g) => {
-                    const item = g.userItem as Record<string, unknown> | null;
-                    const itemName = item?.name as string | undefined;
-                    const itemId = item?.itemId as number | undefined;
-                    const ilvl = item?.ilvl as number | undefined;
-                    const enchantId = item?.enchantId as number | undefined;
-                    const gemIds = item?.gemIds as number[] | undefined;
-                    return (
-                      <tr key={g.slot} className="border-b border-border/50 hover:bg-card-hover">
-                        <td className="px-4 py-3 text-sm font-medium capitalize">{g.slot.replace(/_/g, " ")}</td>
-                        <td className="px-4 py-3 text-sm">
-                          {item ? <span className="quality-epic">{itemName || `Item #${itemId}`}</span> : <span className="text-muted">--</span>}
-                        </td>
-                        <td className="px-4 py-3 text-right text-sm">
-                          {ilvl ? <span className={`font-semibold ${ilvl >= 285 ? "text-accent" : ilvl >= 276 ? "text-foreground" : "text-muted"}`}>{ilvl}</span> : <span className="text-muted">--</span>}
-                        </td>
-                        <td className="px-4 py-3 text-center text-sm">
-                          {enchantId ? <span className="text-success">Si</span> : item ? <span className="text-danger">No</span> : <span className="text-muted">--</span>}
-                        </td>
-                        <td className="px-4 py-3 text-center text-sm">
-                          {gemIds && gemIds.length > 0 ? <span className="text-accent">{gemIds.length}</span> : item ? <span className="text-muted">--</span> : <span className="text-muted">--</span>}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
             </div>
           )}
         </div>
