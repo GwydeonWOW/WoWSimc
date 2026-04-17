@@ -160,77 +160,13 @@ export default function ComparePage() {
         // Sync failed, fall through
       }
 
-      // Final fallback: generate local comparison with mock top data
-      setApiStatus("Datos de top players no disponibles. Mostrando comparacion estimada.");
-      setComparison(generateFallbackComparison(char, ct));
-    } catch {
-      setApiStatus("Error al cargar datos de comparacion");
-      setComparison(generateFallbackComparison(char, ct));
+      // No data available - show error
+      setApiStatus(`No se pudieron obtener datos de top players para ${char.class} ${char.spec}. Verifica la conexion a la base de datos y que las APIs esten configuradas.`);
+      setComparison(null);
+    } catch (e) {
+      setApiStatus("Error al cargar datos de comparacion: " + (e instanceof Error ? e.message : String(e)));
+      setComparison(null);
     }
-  }
-
-  function generateFallbackComparison(char: SimCCharacterOutput, ct: ContentType): ComparisonResult {
-    const mockTopStats = {
-      critRating: { avg: 9200, p25: 7800, p50: 9000, p75: 10400, p100: 12500 },
-      hasteRating: { avg: 7600, p25: 6200, p50: 7500, p75: 8800, p100: 10200 },
-      masteryRating: { avg: 8100, p25: 6500, p50: 8000, p75: 9500, p100: 11500 },
-      versatilityRating: { avg: 5900, p25: 4600, p50: 5800, p75: 7100, p100: 8500 },
-    };
-
-    const STAT_LABELS: Record<string, string> = {
-      critRating: "Critical Strike", hasteRating: "Haste",
-      masteryRating: "Mastery", versatilityRating: "Versatility",
-    };
-
-    const statResults = Object.entries(mockTopStats).map(([key, data]) => {
-      const userValue = char.stats[key as keyof typeof char.stats] || 0;
-      const diff = userValue - data.avg;
-      const diffPercent = data.avg > 0 ? (diff / data.avg) * 100 : 0;
-      let percentile = 50;
-      if (userValue >= data.p100) percentile = 100;
-      else if (userValue >= data.p75) percentile = 75 + ((userValue - data.p75) / (data.p100 - data.p75)) * 25;
-      else if (userValue >= data.p50) percentile = 50 + ((userValue - data.p50) / (data.p75 - data.p50)) * 25;
-      else if (userValue >= data.p25) percentile = 25 + ((userValue - data.p25) / (data.p50 - data.p25)) * 25;
-      else percentile = (userValue / Math.max(data.p25, 1)) * 25;
-
-      return {
-        stat: STAT_LABELS[key] || key, userValue,
-        topAvg: Math.round(data.avg), topP25: data.p25, topP50: data.p50, topP75: data.p75, topP100: data.p100,
-        percentile: Math.max(0, Math.min(100, Math.round(percentile))),
-        diff: Math.round(diff), diffPercent: Math.round(diffPercent * 10) / 10,
-      };
-    });
-
-    const gearResults = GEAR_SLOTS.map((slot) => {
-      const userItem = char.gear[slot] || null;
-      const score = userItem ? 50 + Math.floor(Math.random() * 50) : 0;
-      const itemName = (userItem as Record<string, unknown>)?.name as string | undefined;
-      return {
-        slot, userItem: userItem ? { ...userItem, name: itemName } : null,
-        topItems: userItem ? [{ itemId: userItem.itemId + 100, name: `Top ${slot} Item`, popularity: 0.72, avgIlvl: Math.max(userItem.ilvl, 280) + 3 }] : [],
-        score, isMatch: score > 80, isUpgrade: score < 50,
-      };
-    });
-
-    const statsAvailable = hasStats(char);
-    const avgStatScore = statsAvailable ? statResults.reduce((s, r) => s + r.percentile, 0) / 4 : 0;
-    const avgGearScore = gearResults.reduce((s, r) => s + r.score, 0) / gearResults.length;
-
-    return {
-      contentType: ct,
-      scores: {
-        stats: Math.round(avgStatScore), gear: Math.round(avgGearScore),
-        talents: 0, enchants: 0, overall: Math.round(avgStatScore * 0.2 + avgGearScore * 0.35 + 15),
-      },
-      stats: statResults, gear: gearResults, talents: [],
-      recommendations: statsAvailable ? statResults
-        .filter((s) => s.diffPercent < -10)
-        .map((s) => ({
-          type: "stat" as const, severity: s.diffPercent < -20 ? ("high" as const) : ("medium" as const),
-          message: `Tu ${s.stat} esta ${Math.abs(s.diffPercent).toFixed(1)}% por debajo del promedio de top players`,
-          currentValue: s.userValue.toString(), recommendedValue: s.topAvg.toString(),
-        })) : [],
-    };
   }
 
   return (
