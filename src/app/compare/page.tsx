@@ -127,47 +127,23 @@ export default function ComparePage() {
     const effectiveBoss = boss ?? selectedBoss;
 
     try {
-      // For boss-specific raid data: fetch from archon.gg on-demand
-      if (ct === "raid" && effectiveBoss && effectiveBoss !== "all-bosses") {
-        setApiStatus(`Cargando datos de ${effectiveBoss} desde archon.gg...`);
-        const archonRes = await fetch(
-          `/api/compare/archon?classSlug=${char.class}&specSlug=${char.spec}&contentType=raid&encounter=${effectiveBoss}`
-        );
-        const archonJson = await archonRes.json();
+      // Primary: always fetch from archon.gg on-demand for fresh data with correct item names
+      const ctParam = ct === "raid" ? "raid" : "mythic_plus";
+      const encounterParam = ct === "raid" && effectiveBoss && effectiveBoss !== "all-bosses" ? `&encounter=${effectiveBoss}` : "";
+      setApiStatus(`Cargando datos desde archon.gg...`);
 
-        if (archonJson.success && archonJson.aggregate) {
-          setTalentBuilds(archonJson.talentBuilds || []);
-          const compRes = await fetch("/api/compare", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ character: char, aggregate: archonJson.aggregate, contentType: ct }),
-          });
-          const compData = await compRes.json();
-          if (compData.success) {
-            setComparison(compData.result);
-            setApiStatus("");
-            return;
-          }
-        }
-        setApiStatus(`No se pudieron obtener datos para el boss seleccionado.`);
-        setComparison(null);
-        return;
-      }
-
-      // Default flow: DB aggregate -> on-demand sync
-      const res = await fetch(
-        `/api/compare/aggregate?classSlug=${char.class}&specSlug=${char.spec}&contentType=${ct}&season=${CURRENT_SEASON}`
+      const archonRes = await fetch(
+        `/api/compare/archon?classSlug=${char.class}&specSlug=${char.spec}&contentType=${ctParam}${encounterParam}`
       );
-      const data = await res.json();
+      const archonJson = await archonRes.json();
 
-      // Fetch talent builds from archon.gg in parallel
-      fetchTalentBuilds(char.class, char.spec, ct);
+      if (archonJson.success && archonJson.aggregate) {
+        setTalentBuilds(archonJson.talentBuilds || []);
 
-      if (data.success && data.aggregate) {
         const compRes = await fetch("/api/compare", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ character: char, aggregate: data.aggregate, contentType: ct }),
+          body: JSON.stringify({ character: char, aggregate: archonJson.aggregate, contentType: ct }),
         });
         const compData = await compRes.json();
 
@@ -178,39 +154,26 @@ export default function ComparePage() {
         }
       }
 
-      // No aggregate data — try on-demand sync
-      setApiStatus("No hay datos. Sincronizando desde archon.gg...");
-      try {
-        const syncRes = await fetch("/api/sync", {
+      // Fallback: try DB aggregate
+      setApiStatus("Cargando datos cacheados...");
+      const dbRes = await fetch(
+        `/api/compare/aggregate?classSlug=${char.class}&specSlug=${char.spec}&contentType=${ct}&season=${CURRENT_SEASON}`
+      );
+      const dbData = await dbRes.json();
+
+      if (dbData.success && dbData.aggregate) {
+        const compRes = await fetch("/api/compare", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ classSlug: char.class, specSlug: char.spec, contentType: ct }),
+          body: JSON.stringify({ character: char, aggregate: dbData.aggregate, contentType: ct }),
         });
-        const syncData = await syncRes.json();
+        const compData = await compRes.json();
 
-        if (syncData.success && syncData.synced > 0) {
-          const aggRes2 = await fetch(
-            `/api/compare/aggregate?classSlug=${char.class}&specSlug=${char.spec}&contentType=${ct}&season=${CURRENT_SEASON}`
-          );
-          const aggData2 = await aggRes2.json();
-
-          if (aggData2.success && aggData2.aggregate) {
-            const compRes2 = await fetch("/api/compare", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ character: char, aggregate: aggData2.aggregate, contentType: ct }),
-            });
-            const compData2 = await compRes2.json();
-
-            if (compData2.success) {
-              setComparison(compData2.result);
-              setApiStatus(`Comparado contra ${syncData.synced} top players`);
-              return;
-            }
-          }
+        if (compData.success) {
+          setComparison(compData.result);
+          setApiStatus("Datos cacheados (pueden estar desactualizados)");
+          return;
         }
-      } catch {
-        // Sync failed, fall through
       }
 
       setApiStatus(`No se pudieron obtener datos de top players para ${char.class} ${char.spec}.`);

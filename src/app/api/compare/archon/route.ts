@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { fetchArchonData } from "@/lib/api/archon";
+import { syncForSpec } from "@/lib/aggregation/top-players";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -89,6 +90,11 @@ export async function GET(request: Request) {
       .map(([gemId, popularity]) => ({ gemId, popularity }))
       .sort((a, b) => b.popularity - a.popularity)
       .slice(0, 10);
+
+    // Background: update DB cache so fallback data stays fresh
+    if (!encounter || encounter === "all-bosses") {
+      syncForSpec(classSlug, specSlug, contentType as "mythic_plus" | "raid").catch(() => {});
+    }
 
     return NextResponse.json({
       success: true,
