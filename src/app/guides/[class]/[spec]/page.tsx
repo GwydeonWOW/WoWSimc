@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { CLASS_INFO } from "@/types/wow";
 import { notFound } from "next/navigation";
 import type { ArchonPageData, ArchonTalentBuild } from "@/lib/api/archon";
+import type { CompositionResult, CompositionEntry } from "@/lib/api/warcraftlogs";
 
 interface PageProps {
   params: Promise<{ class: string; spec: string }>;
@@ -33,6 +34,7 @@ export default function GuidePage({ params }: PageProps) {
   const [selectedBoss, setSelectedBoss] = useState<string>("all-bosses");
   const [encounters, setEncounters] = useState<EncounterOption[]>([]);
   const [data, setData] = useState<ArchonPageData | null>(null);
+  const [composition, setComposition] = useState<CompositionResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>("");
 
@@ -72,6 +74,18 @@ export default function GuidePage({ params }: PageProps) {
         setData(archonJson.data);
       } else {
         setError(archonJson.error || "No se pudieron cargar los datos");
+      }
+
+      // Fetch M+ composition data (only for M+)
+      if (ct === "mythic_plus") {
+        fetch(`/api/composition?classSlug=${resolved.classSlug}&specSlug=${resolved.specSlug}`)
+          .then((r) => r.json())
+          .then((d) => {
+            if (d.success) setComposition(d as CompositionResult);
+          })
+          .catch(() => {});
+      } else {
+        setComposition(null);
       }
     } catch (e) {
       setError("Error al cargar datos de archon.gg");
@@ -454,6 +468,24 @@ export default function GuidePage({ params }: PageProps) {
             )}
           </Section>
 
+          {/* M+ Compositions Section */}
+          {contentType === "mythic_plus" && (
+            <Section title="Composiciones M+" subtitle={`Grupos mas comunes con ${specInfo!.name} ${classInfo!.name} en keys +10`}>
+              {!composition || composition.compositions.length === 0 ? (
+                <EmptyState text={composition === null ? "Cargando datos de composicion..." : "No hay datos de composiciones disponibles"} />
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                  <div style={{ fontSize: "0.75rem", color: "var(--muted)", marginBottom: "0.5rem" }}>
+                    Basado en {composition.totalRuns} runs analizadas
+                  </div>
+                  {composition.compositions.map((comp, idx) => (
+                    <CompositionCard key={idx} comp={comp} idx={idx} />
+                  ))}
+                </div>
+              )}
+            </Section>
+          )}
+
           {/* Enchants & Gems Section */}
           <Section title="Encantos y Gemas" subtitle="Encantos y gemas mas usados por top players">
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
@@ -716,6 +748,92 @@ function TalentBuildCard({ build, idx }: { build: ArchonTalentBuild; idx: number
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+// WoW class colors for composition display
+const CLASS_COLORS: Record<string, string> = {
+  DeathKnight: "#c41f3b",
+  DemonHunter: "#a330c9",
+  Druid: "#ff7d0a",
+  Evoker: "#33937f",
+  Hunter: "#abd473",
+  Mage: "#69ccf0",
+  Monk: "#00ff96",
+  Paladin: "#f58cba",
+  Priest: "#ffffff",
+  Rogue: "#fff569",
+  Shaman: "#0070de",
+  Warlock: "#9482c9",
+  Warrior: "#c79c6e",
+};
+
+const ROLE_ICONS: Record<string, string> = {
+  tank: "\u{1F6E1}\uFE0F",
+  healer: "\u2764\uFE0F",
+  dps: "\u2694\uFE0F",
+};
+
+function CompositionCard({ comp, idx }: { comp: CompositionEntry; idx: number }) {
+  const allPlayers = [
+    { ...comp.tank, roleIcon: ROLE_ICONS.tank },
+    { ...comp.healer, roleIcon: ROLE_ICONS.healer },
+    ...comp.dps.map((d) => ({ ...d, roleIcon: ROLE_ICONS.dps })),
+  ];
+
+  return (
+    <div style={{
+      background: "var(--card-hover)",
+      border: `1px solid ${idx === 0 ? "rgba(63, 185, 80, 0.3)" : "var(--border)"}`,
+      borderRadius: "0.5rem",
+      padding: "0.75rem 1rem",
+    }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+          <span style={{
+            fontSize: "0.75rem", fontWeight: 700,
+            color: idx === 0 ? "var(--success)" : "var(--primary)",
+          }}>
+            #{idx + 1}
+          </span>
+          <div style={{ display: "flex", gap: "0.375rem", flexWrap: "wrap" }}>
+            {allPlayers.map((p, i) => (
+              <span
+                key={i}
+                style={{
+                  fontSize: "0.75rem",
+                  fontWeight: 500,
+                  padding: "0.125rem 0.5rem",
+                  borderRadius: "0.25rem",
+                  background: "rgba(0,0,0,0.3)",
+                  border: "1px solid " + (CLASS_COLORS[p.className] || "var(--border)"),
+                  color: CLASS_COLORS[p.className] || "var(--foreground)",
+                }}
+              >
+                {p.roleIcon} {p.specName}
+              </span>
+            ))}
+          </div>
+        </div>
+        <div style={{ textAlign: "right", flexShrink: 0 }}>
+          <div style={{ fontSize: "0.875rem", fontWeight: 700, color: "var(--accent)" }}>
+            {comp.percentage}%
+          </div>
+          <div style={{ fontSize: "0.65rem", color: "var(--muted)" }}>
+            +{comp.avgKeystoneLevel} avg ({comp.count} runs)
+          </div>
+        </div>
+      </div>
+      <div style={{
+        height: "0.375rem", background: "rgba(48, 54, 61, 0.5)",
+        borderRadius: "9999px", overflow: "hidden",
+      }}>
+        <div style={{
+          width: `${comp.percentage}%`, height: "100%", borderRadius: "9999px",
+          background: idx === 0 ? "var(--success)" : idx < 3 ? "var(--primary)" : "var(--warning)",
+        }} />
+      </div>
     </div>
   );
 }

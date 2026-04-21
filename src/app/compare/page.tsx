@@ -6,6 +6,7 @@ import type { SimCCharacterOutput } from "@/lib/simc/parser.types";
 import type { ParseWarning } from "@/lib/simc/parser.types";
 import type { ComparisonResult } from "@/types/comparison";
 import type { ContentType } from "@/types/wow";
+import type { CompositionResult as CompResult, CompositionEntry } from "@/lib/api/warcraftlogs";
 import { CURRENT_SEASON, GEAR_SLOTS } from "@/types/wow";
 
 interface EncounterOption {
@@ -53,6 +54,7 @@ export default function ComparePage() {
   const [loading, setLoading] = useState(false);
   const [apiStatus, setApiStatus] = useState<string>("");
   const [talentBuilds, setTalentBuilds] = useState<TalentBuild[]>([]);
+  const [composition, setComposition] = useState<CompResult | null>(null);
 
   const hasStats = (char: SimCCharacterOutput) =>
     char.stats.critRating > 0 || char.stats.hasteRating > 0 || char.stats.masteryRating > 0 || char.stats.versatilityRating > 0;
@@ -123,6 +125,7 @@ export default function ComparePage() {
     setApiStatus((prev) => prev || "Cargando datos de top players...");
     setComparison(null);
     setTalentBuilds([]);
+    setComposition(null);
 
     const effectiveBoss = boss ?? selectedBoss;
 
@@ -139,6 +142,16 @@ export default function ComparePage() {
 
       if (archonJson.success && archonJson.aggregate) {
         setTalentBuilds(archonJson.talentBuilds || []);
+
+        // Fetch M+ composition data in background (only for M+)
+        if (ct === "mythic_plus") {
+          fetch(`/api/composition?classSlug=${char.class}&specSlug=${char.spec}`)
+            .then((r) => r.json())
+            .then((d) => {
+              if (d.success) setComposition(d as CompResult);
+            })
+            .catch(() => {});
+        }
 
         const compRes = await fetch("/api/compare", {
           method: "POST",
@@ -1014,6 +1027,125 @@ export default function ComparePage() {
           )}
         </div>
       )}
+
+      {/* M+ Compositions — shown below tabs for M+ content type */}
+      {character && contentType === "mythic_plus" && comparison && (
+        <div style={{ marginTop: "1rem" }}>
+          <div style={{
+            background: "var(--card)",
+            border: "1px solid var(--border)",
+            borderRadius: "0.5rem",
+            padding: "1.5rem",
+          }}>
+            <h3 style={{ fontWeight: 600, marginBottom: "0.25rem" }}>Composiciones M+</h3>
+            <p style={{ fontSize: "0.75rem", color: "var(--muted)", marginBottom: "1rem" }}>
+              Grupos mas comunes con {character.spec} {character.class} en keys +10
+            </p>
+            {!composition || composition.compositions.length === 0 ? (
+              <p style={{ color: "var(--muted)", fontSize: "0.875rem", textAlign: "center", padding: "1rem" }}>
+                {composition === null ? "Cargando datos de composicion..." : "No hay datos de composiciones disponibles"}
+              </p>
+            ) : (
+              <div>
+                <div style={{ fontSize: "0.75rem", color: "var(--muted)", marginBottom: "0.5rem" }}>
+                  Basado en {composition.totalRuns} runs analizadas
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                  {composition.compositions.map((comp, idx) => (
+                    <CompCard key={idx} comp={comp} idx={idx} />
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// WoW class colors
+const COMP_CLASS_COLORS: Record<string, string> = {
+  DeathKnight: "#c41f3b",
+  DemonHunter: "#a330c9",
+  Druid: "#ff7d0a",
+  Evoker: "#33937f",
+  Hunter: "#abd473",
+  Mage: "#69ccf0",
+  Monk: "#00ff96",
+  Paladin: "#f58cba",
+  Priest: "#ffffff",
+  Rogue: "#fff569",
+  Shaman: "#0070de",
+  Warlock: "#9482c9",
+  Warrior: "#c79c6e",
+};
+
+const COMP_ROLE_ICONS: Record<string, string> = {
+  tank: "\u{1F6E1}\uFE0F",
+  healer: "\u2764\uFE0F",
+  dps: "\u2694\uFE0F",
+};
+
+function CompCard({ comp, idx }: { comp: CompositionEntry; idx: number }) {
+  const allPlayers = [
+    { ...comp.tank, roleIcon: COMP_ROLE_ICONS.tank },
+    { ...comp.healer, roleIcon: COMP_ROLE_ICONS.healer },
+    ...comp.dps.map((d) => ({ ...d, roleIcon: COMP_ROLE_ICONS.dps })),
+  ];
+
+  return (
+    <div style={{
+      background: "var(--card-hover)",
+      border: `1px solid ${idx === 0 ? "rgba(63, 185, 80, 0.3)" : "var(--border)"}`,
+      borderRadius: "0.5rem",
+      padding: "0.75rem 1rem",
+    }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+          <span style={{
+            fontSize: "0.75rem", fontWeight: 700,
+            color: idx === 0 ? "var(--success)" : "var(--primary)",
+          }}>
+            #{idx + 1}
+          </span>
+          <div style={{ display: "flex", gap: "0.375rem", flexWrap: "wrap" }}>
+            {allPlayers.map((p, i) => (
+              <span
+                key={i}
+                style={{
+                  fontSize: "0.75rem",
+                  fontWeight: 500,
+                  padding: "0.125rem 0.5rem",
+                  borderRadius: "0.25rem",
+                  background: "rgba(0,0,0,0.3)",
+                  border: "1px solid " + (COMP_CLASS_COLORS[p.className] || "var(--border)"),
+                  color: COMP_CLASS_COLORS[p.className] || "var(--foreground)",
+                }}
+              >
+                {p.roleIcon} {p.specName}
+              </span>
+            ))}
+          </div>
+        </div>
+        <div style={{ textAlign: "right", flexShrink: 0 }}>
+          <div style={{ fontSize: "0.875rem", fontWeight: 700, color: "var(--accent)" }}>
+            {comp.percentage}%
+          </div>
+          <div style={{ fontSize: "0.65rem", color: "var(--muted)" }}>
+            +{comp.avgKeystoneLevel} avg ({comp.count} runs)
+          </div>
+        </div>
+      </div>
+      <div style={{
+        height: "0.375rem", background: "rgba(48, 54, 61, 0.5)",
+        borderRadius: "9999px", overflow: "hidden",
+      }}>
+        <div style={{
+          width: `${comp.percentage}%`, height: "100%", borderRadius: "9999px",
+          background: idx === 0 ? "var(--success)" : idx < 3 ? "var(--primary)" : "var(--warning)",
+        }} />
+      </div>
     </div>
   );
 }
