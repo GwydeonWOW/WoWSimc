@@ -100,6 +100,20 @@ export interface ArchonTalentBuild {
   metricTiles?: { label: string; value: string }[];
 }
 
+export interface ArchonConsumableItem {
+  itemId: number;
+  name: string;
+  popularity: number;
+}
+
+export interface ArchonConsumablesData {
+  flasks: ArchonConsumableItem[];
+  food: ArchonConsumableItem[];
+  combatPotions: ArchonConsumableItem[];
+  weaponBuffs: ArchonConsumableItem[];
+  healthPotions: ArchonConsumableItem[];
+}
+
 function getArchonClassSlug(ourClassSlug: string): string {
   return CLASS_SLUG_MAP[ourClassSlug] || ourClassSlug;
 }
@@ -370,4 +384,133 @@ function parseGearIcon(rawItem: { icon: string; topLabel: string; bottomLabel: s
   }
 
   return { itemId, name, popularity, parses, enchants, gems, slot };
+}
+
+/**
+ * Parse a consumable item from archon table row HTML
+ */
+function parseConsumableRow(row: Record<string, string>): ArchonConsumableItem | null {
+  const itemHtml = row.item || "";
+  const idMatch = itemHtml.match(/id=\{(\d+)\}/);
+  if (!idMatch) return null;
+  const itemId = parseInt(idMatch[1], 10);
+
+  // Name: last text before </ItemIcon>
+  let name = `Item ${itemId}`;
+  const nameMatch = itemHtml.match(/>([^<]+)<\/ItemIcon>/);
+  if (nameMatch && nameMatch[1].trim()) {
+    name = nameMatch[1].trim();
+  }
+  // Fallback for &nbsp; or empty names
+  if (!name || name === "\u00a0" || name === "&nbsp;" || name.startsWith("Item ")) {
+    // Try subLabel attribute
+    const subMatch = itemHtml.match(/subLabel='([^']+)'/);
+    if (subMatch) name = subMatch[1];
+    // Try any text between > and < that's longer than 2 chars
+    else {
+      const allText = />([^<>{&]+)</g;
+      let m;
+      while ((m = allText.exec(itemHtml)) !== null) {
+        const txt = m[1].trim();
+        if (txt.length > 2) { name = txt; break; }
+      }
+    }
+  }
+
+  // Popularity from popularityAndReportLink
+  const popHtml = row.popularityAndReportLink || "";
+  const popMatch = popHtml.match(/>([\d.]+)%?</);
+  const popularity = popMatch ? parseFloat(popMatch[1]) : 0;
+
+  return { itemId, name, popularity };
+}
+
+/**
+ * Fetch and parse archon.gg consumables page
+ */
+export async function fetchArchonConsumables(
+  classSlug: string,
+  specSlug: string,
+  contentType: string = "mythic_plus",
+  encounter?: string
+): Promise<ArchonConsumablesData> {
+  const archonClass = getArchonClassSlug(classSlug);
+  const archonSpec = getArchonSpecSlug(specSlug);
+
+  let url: string;
+  if (contentType === "raid") {
+    const boss = encounter || "all-bosses";
+    url = `${ARCHON_BASE}/${archonSpec}/${archonClass}/raid/consumables/mythic/${boss}`;
+  } else {
+    url = `${ARCHON_BASE}/${archonSpec}/${archonClass}/mythic-plus/consumables/10/all-dungeons/this-week`;
+  }
+
+  const response = await fetch(url, {
+    headers: {
+      "User-Agent":
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+      Accept: "text/html",
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Archon.gg consumables fetch failed: ${response.status} for ${url}`);
+  }
+
+  const html = await response.text();
+
+  // Extract __NEXT_DATA__
+  const startTag = '<script id="__NEXT_DATA__"';
+  const startIdx = html.indexOf(startTag);
+  if (startIdx === -1) {
+    throw new Error("Could not find __NEXT_DATA__ in archon.gg consumables page");
+  }
+  const jsonStart = html.indexOf(">", startIdx) + 1;
+  const jsonEnd = html.indexOf("</script>", jsonStart);
+  const jsonStr = html.substring(jsonStart, jsonEnd);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const nextData: any = JSON.parse(jsonStr);
+  const page = nextData?.props?.pageProps?.page;
+  const sections = page?.sections || [];
+
+  // Find the tables section (BuildsConsumableTablesSection)
+  const result: ArchonConsumablesData = {
+    flasks: [],
+    food: [],
+    combatPotions: [],
+    weaponBuffs: [],
+    healthPotions: [],
+  };
+
+  for (const section of sections) {
+    if (section.component === "BuildsConsumableTablesSection") {
+      const tables = section.props?.tables || [];
+      // Table order: Flask, Food, Health Potion, Weapon Buff, Combat Potion
+      // Identify by header
+      for (const table of tables) {
+        const headerHtml = table.columns?.item?.header || "";
+        const items: ArchonConsumableItem[] = [];
+
+        for (const row of table.data || []) {
+          const item = parseConsumableRow(row);
+          if (item && item.name !== "\u00a0") items.push(item);
+        }
+
+        if (headerHtml.includes("Flask")) {
+          result.flasks = items;
+        } else if (headerHtml.includes("Food")) {
+          result.food = items;
+        } else if (headerHtml.includes("Health Potion")) {
+          result.healthPotions = items;
+        } else if (headerHtml.includes("Weapon Buff")) {
+          result.weaponBuffs = items;
+        } else if (headerHtml.includes("Combat Potion") || headerHtml.includes("Potion")) {
+          result.combatPotions = items;
+        }
+      }
+      break;
+    }
+  }
+
+  return result;
 }

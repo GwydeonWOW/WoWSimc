@@ -7,6 +7,7 @@ import type { ParseWarning } from "@/lib/simc/parser.types";
 import type { ComparisonResult } from "@/types/comparison";
 import type { ContentType } from "@/types/wow";
 import type { CompositionResult as CompResult, CompositionEntry } from "@/lib/api/warcraftlogs";
+import type { ArchonConsumablesData } from "@/lib/api/archon";
 import { CURRENT_SEASON, GEAR_SLOTS } from "@/types/wow";
 
 interface EncounterOption {
@@ -55,6 +56,7 @@ export default function ComparePage() {
   const [apiStatus, setApiStatus] = useState<string>("");
   const [talentBuilds, setTalentBuilds] = useState<TalentBuild[]>([]);
   const [composition, setComposition] = useState<CompResult | null>(null);
+  const [consumables, setConsumables] = useState<ArchonConsumablesData | null>(null);
 
   const hasStats = (char: SimCCharacterOutput) =>
     char.stats.critRating > 0 || char.stats.hasteRating > 0 || char.stats.masteryRating > 0 || char.stats.versatilityRating > 0;
@@ -126,6 +128,7 @@ export default function ComparePage() {
     setComparison(null);
     setTalentBuilds([]);
     setComposition(null);
+    setConsumables(null);
 
     const effectiveBoss = boss ?? selectedBoss;
 
@@ -152,6 +155,16 @@ export default function ComparePage() {
             })
             .catch(() => {});
         }
+
+        // Fetch consumables data in background
+        const ctParam = ct === "raid" ? "raid" : "mythic_plus";
+        const encParam = ct === "raid" && effectiveBoss && effectiveBoss !== "all-bosses" ? `&encounter=${effectiveBoss}` : "";
+        fetch(`/api/guide/consumables?classSlug=${char.class}&specSlug=${char.spec}&contentType=${ctParam}${encParam}`)
+          .then((r) => r.json())
+          .then((d) => {
+            if (d.success) setConsumables(d.data);
+          })
+          .catch(() => {});
 
         const compRes = await fetch("/api/compare", {
           method: "POST",
@@ -1028,6 +1041,33 @@ export default function ComparePage() {
         </div>
       )}
 
+      {/* Consumables — shown below tabs */}
+      {character && comparison && consumables && (
+        <div style={{ marginTop: "1rem" }}>
+          <div style={{
+            background: "var(--card)",
+            border: "1px solid var(--border)",
+            borderRadius: "0.5rem",
+            padding: "1.5rem",
+          }}>
+            <h3 style={{ fontWeight: 600, marginBottom: "0.25rem" }}>Consumibles</h3>
+            <p style={{ fontSize: "0.75rem", color: "var(--muted)", marginBottom: "1rem" }}>
+              Frasco, comida, potis y aceite mas usados por top players
+            </p>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
+              {[
+                { label: "Frasco", items: consumables.flasks, icon: "\u{1F3EA}" },
+                { label: "Comida", items: consumables.food, icon: "\u{1F35C}" },
+                { label: "Potion de Combate", items: consumables.combatPotions, icon: "\u{1F9EA}" },
+                { label: "Aceite / Arma", items: consumables.weaponBuffs, icon: "\u{1F48E}" },
+              ].map((cat) => (
+                <CompareConsumableCategory key={cat.label} label={cat.label} icon={cat.icon} items={cat.items} />
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* M+ Compositions — shown below tabs for M+ content type */}
       {character && contentType === "mythic_plus" && comparison && (
         <div style={{ marginTop: "1rem" }}>
@@ -1145,6 +1185,71 @@ function CompCard({ comp, idx }: { comp: CompositionEntry; idx: number }) {
           width: `${comp.percentage}%`, height: "100%", borderRadius: "9999px",
           background: idx === 0 ? "var(--success)" : idx < 3 ? "var(--primary)" : "var(--warning)",
         }} />
+      </div>
+    </div>
+  );
+}
+
+interface ConsumableItemData {
+  itemId: number;
+  name: string;
+  popularity: number;
+}
+
+function CompareConsumableCategory({ label, icon, items }: { label: string; icon: string; items: ConsumableItemData[] }) {
+  if (!items || items.length === 0) return null;
+  return (
+    <div>
+      <h4 style={{ fontSize: "0.875rem", fontWeight: 600, marginBottom: "0.5rem" }}>
+        {icon} {label}
+      </h4>
+      <div style={{ display: "flex", flexDirection: "column", gap: "0.375rem" }}>
+        {items.slice(0, 5).map((item, i) => (
+          <div key={item.itemId} style={{
+            background: "var(--card-hover)",
+            border: "1px solid var(--border)",
+            borderRadius: "0.375rem",
+            padding: "0.5rem 0.75rem",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+          }}>
+            <a
+              href={`https://www.wowhead.com/item=${item.itemId}`}
+              data-wh-rename="false"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                fontSize: "0.8125rem",
+                fontWeight: i === 0 ? 600 : 400,
+                color: i === 0 ? "var(--accent)" : "var(--foreground)",
+                textDecoration: "none",
+              }}
+            >
+              {item.name}
+            </a>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <div style={{
+                width: "4rem", height: "0.375rem",
+                background: "rgba(48, 54, 61, 0.5)",
+                borderRadius: "9999px", overflow: "hidden",
+              }}>
+                <div style={{
+                  width: `${item.popularity}%`, height: "100%",
+                  borderRadius: "9999px",
+                  background: i === 0 ? "var(--success)" : "var(--primary)",
+                }} />
+              </div>
+              <span style={{
+                fontSize: "0.75rem", fontWeight: 700,
+                color: i === 0 ? "var(--success)" : "var(--muted)",
+                width: "3rem", textAlign: "right",
+              }}>
+                {Math.round(item.popularity)}%
+              </span>
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );
