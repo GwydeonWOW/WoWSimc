@@ -1,9 +1,6 @@
 import { CLASS_INFO } from "@/types/wow";
 
 export default function HomePage() {
-  // Filter to only show classes that have DPS specs, and show DPS spec count
-  const dpsClasses = CLASS_INFO.filter((cls) => cls.specs.some((s) => s.role === "dps"));
-
   return (
     <div style={{ maxWidth: "80rem", margin: "0 auto", padding: "0 1rem", paddingTop: "2rem", paddingBottom: "2rem" }}>
       {/* Hero */}
@@ -32,49 +29,47 @@ export default function HomePage() {
         </a>
       </section>
 
-      {/* Class Grid - DPS focused */}
+      {/* Class Grid - All specs */}
       <section style={{ marginBottom: "3rem" }}>
         <h2 style={{ fontSize: "1.25rem", fontWeight: 600, marginBottom: "1.5rem" }}>
-          Guias por Clase <span style={{ color: "var(--muted)", fontWeight: 400, fontSize: "0.875rem" }}>(DPS)</span>
+          Guias por Clase y Spec
         </h2>
-        <div className="class-grid" style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(5, 1fr)",
-          gap: "0.75rem",
-        }}>
-          {dpsClasses.map((cls) => {
-            const dpsSpecs = cls.specs.filter((s) => s.role === "dps");
-            return (
-              <a
-                key={cls.slug}
-                href={`/guides/${cls.slug}/${dpsSpecs[0].slug}`}
-                style={{
-                  display: "block",
-                  background: "var(--card)",
-                  border: "1px solid var(--border)",
-                  borderRadius: "0.5rem",
-                  padding: "1rem",
-                  textDecoration: "none",
-                  transition: "background 0.2s",
-                }}
-                className="class-card"
-              >
-                <img
-                  src={`https://render.worldofwarcraft.com/us/icons/56/${cls.icon}.jpg`}
-                  alt={cls.name}
-                  style={{ width: "3rem", height: "3rem", borderRadius: "0.25rem", margin: "0 auto", display: "block", marginBottom: "0.5rem" }}
-                  loading="lazy"
-                />
-                <div style={{ textAlign: "center", fontSize: "0.875rem", fontWeight: 500, color: "var(--foreground)" }}>
-                  {cls.name}
-                </div>
-                <div style={{ textAlign: "center", fontSize: "0.75rem", color: "var(--muted)", marginTop: "0.25rem" }}>
-                  {dpsSpecs.map((s) => s.name).join(", ")}
-                </div>
-              </a>
-            );
-          })}
-        </div>
+        {CLASS_INFO.map((cls) => (
+          <div key={cls.slug} style={{ marginBottom: "1rem" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.5rem" }}>
+              <img
+                src={`https://render.worldofwarcraft.com/us/icons/56/${cls.icon}.jpg`}
+                alt={cls.name}
+                style={{ width: "1.75rem", height: "1.75rem", borderRadius: "0.25rem" }}
+                loading="lazy"
+              />
+              <span style={{ fontSize: "0.9375rem", fontWeight: 600 }}>{cls.name}</span>
+            </div>
+            <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+              {cls.specs.map((spec) => (
+                <a
+                  key={spec.slug}
+                  href={`/guides/${cls.slug}/${spec.slug}`}
+                  style={{
+                    display: "block",
+                    background: "var(--card)",
+                    border: "1px solid var(--border)",
+                    borderRadius: "0.375rem",
+                    padding: "0.375rem 0.75rem",
+                    textDecoration: "none",
+                    fontSize: "0.8125rem",
+                    fontWeight: 500,
+                    color: "var(--foreground)",
+                    transition: "background 0.2s, border-color 0.2s",
+                  }}
+                  className="class-card"
+                >
+                  {spec.name}
+                </a>
+              ))}
+            </div>
+          </div>
+        ))}
       </section>
 
       {/* How it works */}

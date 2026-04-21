@@ -123,9 +123,27 @@ export default function GuidePage({ params }: PageProps) {
           <h1 style={{ fontSize: "1.5rem", fontWeight: 700 }}>
             {specInfo!.name} {classInfo!.name}
           </h1>
-          <p style={{ fontSize: "0.875rem", color: "var(--muted)", marginTop: "0.25rem" }}>
-            Guia basada en datos de top players — archon.gg
-          </p>
+          {/* Spec selector */}
+          <div style={{ display: "flex", gap: "0.375rem", marginTop: "0.5rem" }}>
+            {classInfo!.specs.map((s) => (
+              <a
+                key={s.slug}
+                href={`/guides/${resolved.classSlug}/${s.slug}`}
+                style={{
+                  fontSize: "0.8125rem",
+                  fontWeight: 500,
+                  padding: "0.25rem 0.75rem",
+                  borderRadius: "0.375rem",
+                  textDecoration: "none",
+                  background: s.slug === resolved.specSlug ? "var(--primary)" : "var(--card-hover)",
+                  color: s.slug === resolved.specSlug ? "white" : "var(--muted)",
+                  border: "1px solid " + (s.slug === resolved.specSlug ? "var(--primary)" : "var(--border)"),
+                }}
+              >
+                {s.name}
+              </a>
+            ))}
+          </div>
         </div>
         <a
           href={`/compare`}
