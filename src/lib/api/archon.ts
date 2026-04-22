@@ -396,26 +396,27 @@ function parseConsumableRow(row: Record<string, string>): ArchonConsumableItem |
   const itemId = parseInt(idMatch[1], 10);
 
   // Name: last text before </ItemIcon>
-  let name = `Item ${itemId}`;
+  let name = "";
   const nameMatch = itemHtml.match(/>([^<]+)<\/ItemIcon>/);
-  if (nameMatch && nameMatch[1].trim()) {
-    name = nameMatch[1].trim();
+  const rawName = nameMatch?.[1]?.trim() || "";
+  if (rawName && rawName !== "\u00a0" && rawName !== "&nbsp;" && rawName !== "&amp;nbsp;") {
+    name = rawName;
   }
-  // Fallback for &nbsp; or empty names
-  if (!name || name === "\u00a0" || name === "&nbsp;" || name.startsWith("Item ")) {
-    // Try subLabel attribute
+  // Fallback: try subLabel attribute
+  if (!name) {
     const subMatch = itemHtml.match(/subLabel='([^']+)'/);
     if (subMatch) name = subMatch[1];
-    // Try any text between > and < that's longer than 2 chars
-    else {
-      const allText = />([^<>{&]+)</g;
-      let m;
-      while ((m = allText.exec(itemHtml)) !== null) {
-        const txt = m[1].trim();
-        if (txt.length > 2) { name = txt; break; }
-      }
+  }
+  // Fallback: try any meaningful text between > and <
+  if (!name || name.startsWith("Item ")) {
+    const allText = />([^<>{&]+)</g;
+    let m;
+    while ((m = allText.exec(itemHtml)) !== null) {
+      const txt = m[1].trim();
+      if (txt.length > 2 && !/^[\d.]+%?$/.test(txt)) { name = txt; break; }
     }
   }
+  if (!name) name = `Item ${itemId}`;
 
   // Popularity from popularityAndReportLink
   const popHtml = row.popularityAndReportLink || "";
@@ -493,7 +494,10 @@ export async function fetchArchonConsumables(
 
         for (const row of table.data || []) {
           const item = parseConsumableRow(row);
-          if (item && item.name !== "\u00a0") items.push(item);
+          if (!item || item.popularity < 1) continue;
+          // Skip items with unresolved names
+          if (item.name.startsWith("Item ")) continue;
+          items.push(item);
         }
 
         if (headerHtml.includes("Flask")) {
